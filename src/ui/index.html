@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>tickets</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>tickets</h1>
+        <div class="actions">
+          <button id="auto-arrange" type="button">Auto-arrange</button>
+          <button id="print" type="button" class="primary">Print batch</button>
+        </div>
+        <div id="status" role="status" aria-live="polite"></div>
+      </header>
+      <main>
+        <section id="board-panel" aria-label="Board">
+          <div id="sheet-tabs" role="tablist" aria-label="Sheets"></div>
+          <div id="board" tabindex="-1"></div>
+        </section>
+        <aside>
+          <form id="add-group" autocomplete="off">
+            <h2>Add shipment</h2>
+            <label>Project <input name="project" required /></label>
+            <label>Destination <input name="destination" /></label>
+            <label>Volumes <input name="totalVolumes" type="number" min="1" max="100000" step="1" required /></label>
+            <label>Group id (optional) <input name="id" /></label>
+            <button type="submit" class="primary">Add to queue</button>
+          </form>
+          <section aria-label="Queued groups">
+            <h2>Queue</h2>
+            <ul id="groups"></ul>
+          </section>
+          <section aria-label="Printed batches">
+            <h2>Printed</h2>
+            <ul id="batches"></ul>
+          </section>
+        </aside>
+      </main>
+      <footer>
+        <div id="overview" aria-label="Overview"></div>
+      </footer>
+    </div>
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>
