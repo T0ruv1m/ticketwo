@@ -119,13 +119,15 @@ export class Store {
   deleteGroup(groupId: string): void {
     const group = this.groups.get(groupId);
     if (!group) throw new DomainError("group-not-found", `no group ${groupId}`);
+    const removed: string[] = [];
     for (const [id, ticket] of this.tickets) {
       if (ticket.groupId === groupId && ticket.status === "pending") {
+        removed.push(id);
         this.tickets.delete(id);
       }
     }
     this.groups.delete(groupId);
-    this.removeTicketsFromBoard(ticketsOfGroup(this.tickets, groupId));
+    this.removeTicketsFromBoard(removed);
   }
 
   board(): BoardView {
@@ -278,12 +280,16 @@ export class Store {
 
   private removeTicketsFromBoard(ticketIds: readonly string[]): void {
     if (ticketIds.length === 0) return;
+    const removing = new Set(ticketIds);
     const next = cloneSheets(this.sheets);
     for (const sheet of next) {
-      if (sheet.kind !== "grid") continue;
+      if (sheet.kind === "full") {
+        if (sheet.ticketId && removing.has(sheet.ticketId)) sheet.ticketId = null;
+        continue;
+      }
       for (let i = 0; i < sheet.slots.length; i += 1) {
         const id = sheet.slots[i];
-        if (id && ticketIds.includes(id)) sheet.slots[i] = null;
+        if (id && removing.has(id)) sheet.slots[i] = null;
       }
     }
     this.sheets = pruneSheets(next);
@@ -301,14 +307,6 @@ function firstRun(slots: readonly (string | null)[], size: number): number {
     }
   }
   return -1;
-}
-
-function ticketsOfGroup(tickets: ReadonlyMap<string, Ticket>, groupId: string): string[] {
-  const ids: string[] = [];
-  for (const [id, ticket] of tickets) {
-    if (ticket.groupId === groupId && ticket.status === "pending") ids.push(id);
-  }
-  return ids;
 }
 
 function snapshot(ticket: Ticket): BatchSnapshot {
