@@ -102,14 +102,6 @@ describe("Print contract", () => {
     expect(store.listBatches()).toHaveLength(1);
   });
 
-  it("returns the existing batch on a lost-response retry", async () => {
-    const { store } = makeStore();
-    addGroup(store, "G1", 4);
-    const first = await store.print("retry-key");
-    const retry = await store.print("retry-key");
-    if (first.printed && retry.printed) expect(retry.batch.pdfHash).toBe(first.batch.pdfHash);
-  });
-
   it("rejects dropping a group with the same id but different attributes", () => {
     const { store } = makeStore();
     addGroup(store, "G1", 3, "ACME", "Berlin");

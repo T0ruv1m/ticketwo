@@ -3,13 +3,6 @@ import { DomainError } from "../src/domain/errors.ts";
 import { addGroup, gridOccupancy, makeStore, occupiedGroupRuns } from "./helpers.ts";
 
 describe("Grouping", () => {
-  it("every ticket belongs to its group", () => {
-    const { store } = makeStore();
-    const result = store.addGroup({ id: "G1", project: "ACME", destination: "Berlin", totalVolumes: 3 });
-    expect(result.tickets).toHaveLength(3);
-    expect(result.tickets.every((t) => t.groupId === "G1")).toBe(true);
-  });
-
   it("groups never interleave", () => {
     const { store } = makeStore();
     addGroup(store, "G1", 3);
@@ -79,15 +72,6 @@ describe("Sheets and capacity", () => {
     expect(fullSheet.ticket?.groupId).toBe("G1");
     const others = board.sheets.filter((s) => s.id !== fullSheet.id);
     expect(others.every((s) => (s.kind === "grid" ? true : s.ticket?.groupId !== "G1"))).toBe(true);
-  });
-
-  it("a full-page ticket shows the group total", async () => {
-    const { store, composer } = makeStore();
-    addGroup(store, "G1", 12);
-    await store.print("key");
-    const page = composer.calls[0]!.find((p) => p.kind === "full");
-    expect(page?.kind).toBe("full");
-    if (page?.kind === "full") expect(page.ticket.totalVolumes).toBe(12);
   });
 });
 

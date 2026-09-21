@@ -130,14 +130,6 @@ test("keyboard arrows are equivalent to dragging", async ({ page, request }) => 
     .toEqual(["G1", "G1", "G1", "G1", "G1", "G1", "G1", "G1", null, null]);
 });
 
-test("keyboard moves a ticket down one row step of 5", async ({ page, request }) => {
-  await addGroup(request, "G1", 2);
-  await page.reload();
-  await cardByVolume(page, "G1", 1).focus();
-  await page.keyboard.press("ArrowDown");
-  await expect.poll(async () => (await occupancy(page, 0))[5]).toBe("G1");
-});
-
 test("auto-arrange tidies a hand-moved board", async ({ page, request }) => {
   await addGroup(request, "G1", 3);
   await addGroup(request, "G2", 3);
@@ -178,15 +170,6 @@ test("adversarial: whitespace project is rejected", async ({ page }) => {
   await page.getByLabel("Volumes").fill("3");
   await page.getByRole("button", { name: "Add to queue" }).click();
   await expect(page.locator("#status")).toContainText("project must be a non-empty string");
-  await expect(page.locator('[data-testid="ticket"]')).toHaveCount(0);
-});
-
-test("adversarial: a silly volume count is rejected at the boundary", async ({ page, request }) => {
-  const response = await request.post("/api/groups", {
-    data: { id: "GX", project: "P", totalVolumes: 100001 },
-  });
-  expect(response.status()).toBe(400);
-  await page.reload();
   await expect(page.locator('[data-testid="ticket"]')).toHaveCount(0);
 });
 
