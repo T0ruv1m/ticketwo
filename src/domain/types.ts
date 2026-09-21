@@ -29,7 +29,7 @@ export interface GridSheet {
 export interface FullSheet {
   id: string;
   kind: "full";
-  ticketId: string | null;
+  slots: (string | null)[];
 }
 
 export type Sheet = GridSheet | FullSheet;

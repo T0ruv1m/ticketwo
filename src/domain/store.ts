@@ -2,14 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Composer, PageSpec } from "../pdf/composer.ts";
 import { A4_PROFILE, type PrintProfile } from "../pdf/profile.ts";
 import {
+  assertInvariants,
   autoArrange,
-  cloneSheets,
   findTicketSheet,
   keyboardTarget,
   moveTicket,
   nextSheetId,
   positionOf,
-  pruneSheets,
+  removeTickets,
   type MoveDirection,
 } from "./board.ts";
 import { DomainError, isDomainError } from "./errors.ts";
@@ -19,7 +19,7 @@ import {
   ticketId,
   type CreateGroupInput,
 } from "./group.ts";
-import type { Batch, BatchSnapshot, Group, Sheet, Ticket } from "./types.ts";
+import { GRID_SLOTS, type Batch, type BatchSnapshot, type Group, type Sheet, type Ticket } from "./types.ts";
 
 export interface BoardSheetView {
   id: string;
@@ -113,6 +113,7 @@ export class Store {
     this.groups.set(group.id, group);
     for (const ticket of tickets) this.tickets.set(ticket.id, ticket);
     this.placeGroup(tickets);
+    this.guard();
     return { group, tickets, duplicate: false };
   }
 
@@ -128,9 +129,11 @@ export class Store {
     }
     this.groups.delete(groupId);
     this.removeTicketsFromBoard(removed);
+    this.guard();
   }
 
   board(): BoardView {
+    this.guard();
     const positions: Record<string, number> = {};
     for (const ticket of this.tickets.values()) {
       if (ticket.status !== "pending") continue;
@@ -145,7 +148,7 @@ export class Store {
               kind: "grid" as const,
               slots: sheet.slots.map((id) => (id ? this.tickets.get(id) ?? null : null)),
             }
-          : { id: sheet.id, kind: "full" as const, ticket: sheet.ticketId ? this.tickets.get(sheet.ticketId) ?? null : null },
+          : { id: sheet.id, kind: "full" as const, ticket: sheet.slots[0] ? this.tickets.get(sheet.slots[0]) ?? null : null },
       ),
       tickets: [...this.tickets.values()].filter((t) => t.status === "pending"),
       groups: [...this.groups.values()],
@@ -257,7 +260,7 @@ export class Store {
     );
     if (sorted.length === 0) return;
     if (sorted[0]!.kind === "full") {
-      this.sheets.push({ id: nextSheetId(), kind: "full", ticketId: sorted[0]!.id });
+      this.sheets.push({ id: nextSheetId(), kind: "full", slots: [sorted[0]!.id] });
       return;
     }
     const size = sorted.length;
@@ -271,7 +274,7 @@ export class Store {
         return;
       }
     }
-    const sheet: Sheet = { id: nextSheetId(), kind: "grid", slots: new Array(10).fill(null) };
+    const sheet: Sheet = { id: nextSheetId(), kind: "grid", slots: new Array(GRID_SLOTS).fill(null) };
     sorted.forEach((ticket, i) => {
       sheet.slots[i] = ticket.id;
     });
@@ -280,19 +283,11 @@ export class Store {
 
   private removeTicketsFromBoard(ticketIds: readonly string[]): void {
     if (ticketIds.length === 0) return;
-    const removing = new Set(ticketIds);
-    const next = cloneSheets(this.sheets);
-    for (const sheet of next) {
-      if (sheet.kind === "full") {
-        if (sheet.ticketId && removing.has(sheet.ticketId)) sheet.ticketId = null;
-        continue;
-      }
-      for (let i = 0; i < sheet.slots.length; i += 1) {
-        const id = sheet.slots[i];
-        if (id && removing.has(id)) sheet.slots[i] = null;
-      }
-    }
-    this.sheets = pruneSheets(next);
+    this.sheets = removeTickets(this.sheets, ticketIds);
+  }
+
+  private guard(): void {
+    assertInvariants(this.sheets, this.tickets);
   }
 }
 
@@ -328,8 +323,9 @@ export function pagesFromSheets(
   const pages: PageSpec[] = [];
   for (const sheet of sheets) {
     if (sheet.kind === "full") {
-      if (!sheet.ticketId) continue;
-      const ticket = tickets.get(sheet.ticketId);
+      const id = sheet.slots[0];
+      if (!id) continue;
+      const ticket = tickets.get(id);
       if (ticket) pages.push({ kind: "full", ticket });
       continue;
     }

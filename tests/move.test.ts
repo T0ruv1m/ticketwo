@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DomainError } from "../src/domain/errors.ts";
-import { assertInvariants, keyboardTarget } from "../src/domain/board.ts";
+import { assertInvariants, keyboardTarget, previewBlock } from "../src/domain/board.ts";
+import type { Sheet } from "../src/domain/types.ts";
 import { addGroup, gridOccupancy, makeStore } from "./helpers.ts";
 
 function setup(groups: [string, number][]) {
@@ -85,10 +86,38 @@ describe("Move semantics", () => {
       store.board().sheets.map((s) =>
         s.kind === "grid"
           ? { id: s.id, kind: "grid" as const, slots: (s.slots ?? []).map((t) => t?.id ?? null) }
-          : { id: s.id, kind: "full" as const, ticketId: s.ticket?.id ?? null },
+          : { id: s.id, kind: "full" as const, slots: [s.ticket?.id ?? null] },
       ),
       store.tickets,
     );
+  });
+});
+
+describe("Preview parity", () => {
+  it("previews exactly the slots the block lands on", () => {
+    const store = setup([["G1", 3], ["G2", 3]]);
+    const sheet = store.board().sheets[0]!;
+    const dragged = sheet.slots![0]!;
+    expect(previewBlock(store.rawSheets, store.tickets, dragged.id, sheet.id, 6)).toEqual([6, 7, 8]);
+    store.move(dragged.id, sheet.id, 6);
+    expect(gridOccupancy(store.board())).toEqual([
+      null, null, null, "G2", "G2", "G2", "G1", "G1", "G1", null,
+    ]);
+  });
+
+  it("returns null exactly when the move would be rejected", () => {
+    const store = setup([["G1", 3], ["G2", 2]]);
+    const sheet = store.board().sheets[0]!;
+    const dragged = sheet.slots![0]!;
+    expect(previewBlock(store.rawSheets, store.tickets, dragged.id, sheet.id, 3)).toBeNull();
+    expect(() => store.move(dragged.id, sheet.id, 3)).toThrow(DomainError);
+  });
+});
+
+describe("Invariant guard", () => {
+  it("reports a dangling board reference instead of masking it", () => {
+    const sheets: Sheet[] = [{ id: "s1", kind: "grid", slots: ["ghost"] }];
+    expect(() => assertInvariants(sheets, new Map())).toThrow(/references missing ticket ghost/);
   });
 });
 

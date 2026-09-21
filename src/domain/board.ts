@@ -1,4 +1,4 @@
-import { DomainError } from "./errors.ts";
+import { DomainError, type DomainErrorCode } from "./errors.ts";
 import {
   GRID_COLS,
   GRID_ROWS,
@@ -28,9 +28,7 @@ export function makeGridSheet(): GridSheet {
 }
 
 export function cloneSheets(sheets: readonly Sheet[]): Sheet[] {
-  return sheets.map((sheet) =>
-    sheet.kind === "grid" ? { ...sheet, slots: [...sheet.slots] } : { ...sheet },
-  );
+  return sheets.map((sheet) => ({ ...sheet, slots: [...sheet.slots] }) as Sheet);
 }
 
 export function occupiedSlots(sheet: GridSheet): number[] {
@@ -42,7 +40,6 @@ export function occupiedSlots(sheet: GridSheet): number[] {
 }
 
 export function isSheetEmpty(sheet: Sheet): boolean {
-  if (sheet.kind === "full") return sheet.ticketId === null;
   return sheet.slots.every((slot) => slot === null);
 }
 
@@ -57,11 +54,7 @@ export function findTicketSheet(
   for (let index = 0; index < sheets.length; index += 1) {
     const sheet = sheets[index];
     if (!sheet) continue;
-    if (sheet.kind === "full") {
-      if (sheet.ticketId === ticketId) return { sheet, index };
-    } else if (sheet.slots.includes(ticketId)) {
-      return { sheet, index };
-    }
+    if (sheet.slots.includes(ticketId)) return { sheet, index };
   }
   return null;
 }
@@ -71,11 +64,6 @@ export function blockFor(
   tickets: ReadonlyMap<string, Ticket>,
   groupId: string,
 ): string[] {
-  if (sheet.kind === "full") {
-    return sheet.ticketId && tickets.get(sheet.ticketId)?.groupId === groupId
-      ? [sheet.ticketId]
-      : [];
-  }
   const ids = sheet.slots.filter((id): id is string => id !== null);
   return ids
     .filter((id) => tickets.get(id)?.groupId === groupId)
@@ -92,6 +80,24 @@ export function slotOf(sheet: GridSheet, ticketId: string): number {
 
 export function blockSlots(sheet: GridSheet, block: readonly string[]): number[] {
   return block.map((id) => slotOf(sheet, id)).sort((a, b) => a - b);
+}
+
+/** Clear the given ids from every sheet in place, whatever its kind. */
+export function clearTickets(sheets: Sheet[], ticketIds: Iterable<string>): void {
+  const removing = ticketIds instanceof Set ? ticketIds : new Set(ticketIds);
+  for (const sheet of sheets) {
+    for (let i = 0; i < sheet.slots.length; i += 1) {
+      const id = sheet.slots[i];
+      if (id && removing.has(id)) sheet.slots[i] = null;
+    }
+  }
+}
+
+/** Clear the given ids from a copy of the board and prune emptied sheets. */
+export function removeTickets(sheets: readonly Sheet[], ticketIds: readonly string[]): Sheet[] {
+  const next = cloneSheets(sheets);
+  clearTickets(next, ticketIds);
+  return pruneSheets(next);
 }
 
 /**
@@ -115,7 +121,7 @@ export function autoArrange(pending: readonly Ticket[]): Sheet[] {
     const sorted = [...groupTickets].sort((a, b) => volumeOf(a) - volumeOf(b));
 
     if (sorted[0]!.kind === "full") {
-      sheets.push({ id: nextSheetId(), kind: "full", ticketId: sorted[0]!.id });
+      sheets.push({ id: nextSheetId(), kind: "full", slots: [sorted[0]!.id] });
       continue;
     }
 
@@ -164,29 +170,49 @@ export function moveTicket(
   if (ticket.kind === "full") {
     return moveFull(sheets, tickets, ticketId, target);
   }
-  return moveGrid(sheets, tickets, ticket, source.sheet as GridSheet, target, targetSlot);
+  return moveGrid(sheets, tickets, ticket, target, targetSlot);
 }
 
-function moveGrid(
+type GridPlan =
+  | {
+      ok: true;
+      sourceId: string;
+      block: string[];
+      otherBlock: string[] | null;
+      range: number[];
+      srcStart: number | null;
+    }
+  | { ok: false; code: DomainErrorCode; message: string };
+
+/**
+ * The single implementation of the block-move rule: the grabbed card keeps its
+ * index `k` inside its group block, so the block lands starting at `slot - k`.
+ * Used by the real move and by the UI's drag preview, so they cannot drift.
+ */
+function planGridMove(
   sheets: readonly Sheet[],
   tickets: ReadonlyMap<string, Ticket>,
   ticket: Ticket,
-  sourceSheet: GridSheet,
-  target: Sheet,
+  target: GridSheet,
   targetSlot: number,
-): Sheet[] {
-  if (target.kind !== "grid") {
-    throw new DomainError("invalid-target", "a grid ticket cannot move onto a full-page sheet");
+): GridPlan {
+  const source = findTicketSheet(sheets, ticket.id);
+  if (!source || source.sheet.kind !== "grid") {
+    return { ok: false, code: "ticket-not-found", message: `ticket ${ticket.id} is not on the board` };
   }
-  const block = blockFor(sourceSheet, tickets, ticket.groupId);
+  const block = blockFor(source.sheet, tickets, ticket.groupId);
   const k = block.indexOf(ticket.id);
   if (k < 0) {
-    throw new DomainError("ticket-not-found", `ticket ${ticket.id} is not in its group block`);
+    return {
+      ok: false,
+      code: "ticket-not-found",
+      message: `ticket ${ticket.id} is not in its group block`,
+    };
   }
 
   const start = targetSlot - k;
   if (!Number.isInteger(start) || start < 0 || start + block.length > GRID_SLOTS) {
-    throw new DomainError("out-of-bounds", "block does not fit at that slot");
+    return { ok: false, code: "out-of-bounds", message: "block does not fit at that slot" };
   }
 
   const range = Array.from({ length: block.length }, (_, i) => start + i);
@@ -195,40 +221,82 @@ function moveGrid(
     .filter((id): id is string => id !== null);
   const otherIds = occupantIds.filter((id) => !block.includes(id));
 
-  const next = cloneSheets(sheets);
-  const nextTarget = next.find((sheet) => sheet.id === target.id) as GridSheet;
-
   if (otherIds.length === 0) {
-    removeBlock(next, block);
-    placeBlock(nextTarget, start, block);
-    return pruneSheets(next);
+    return { ok: true, sourceId: source.sheet.id, block, otherBlock: null, range, srcStart: null };
   }
-
   if (otherIds.length !== range.length) {
-    throw new DomainError("collision", "target range is only partially occupied");
+    return { ok: false, code: "collision", message: "target range is only partially occupied" };
   }
 
   const otherGroupId = tickets.get(otherIds[0]!)?.groupId;
   if (!otherGroupId || otherIds.some((id) => tickets.get(id)?.groupId !== otherGroupId)) {
-    throw new DomainError("collision", "target range holds more than one group");
+    return { ok: false, code: "collision", message: "target range holds more than one group" };
   }
   const otherBlock = blockFor(target, tickets, otherGroupId);
   if (otherBlock.length !== block.length) {
-    throw new DomainError("collision", "target group has a different size");
+    return { ok: false, code: "collision", message: "target group has a different size" };
   }
   const otherSlots = blockSlots(target, otherBlock);
   if (otherSlots.join(",") !== range.join(",")) {
-    throw new DomainError("collision", "target group does not exactly fill the range");
+    return { ok: false, code: "collision", message: "target group does not exactly fill the range" };
   }
 
-  const nextSource = next.find((sheet) => sheet.id === sourceSheet.id) as GridSheet;
-  const sourceSlots = blockSlots(sourceSheet, block);
-  const srcStart = sourceSlots[0]!;
+  const sourceSlots = blockSlots(source.sheet, block);
+  return {
+    ok: true,
+    sourceId: source.sheet.id,
+    block,
+    otherBlock,
+    range,
+    srcStart: sourceSlots[0]!,
+  };
+}
 
-  removeBlock(next, block);
-  removeBlock(next, otherBlock);
-  placeBlock(nextTarget, start, block);
-  placeBlock(nextSource, srcStart, otherBlock);
+/**
+ * Pure preview of a move: the slots a dropped ticket's block would occupy on the
+ * target sheet, or null if the move would be rejected. Shares its rule with
+ * `moveTicket` via `planGridMove`.
+ */
+export function previewBlock(
+  sheets: readonly Sheet[],
+  tickets: ReadonlyMap<string, Ticket>,
+  ticketId: string,
+  targetSheetId: string,
+  targetSlot: number,
+): number[] | null {
+  const ticket = tickets.get(ticketId);
+  if (!ticket || ticket.status !== "pending") return null;
+  const target = sheets.find((sheet) => sheet.id === targetSheetId);
+  if (!target) return null;
+  if (ticket.kind === "full") return target.kind === "full" ? [0] : null;
+  if (target.kind !== "grid") return null;
+  const plan = planGridMove(sheets, tickets, ticket, target, targetSlot);
+  return plan.ok ? plan.range : null;
+}
+
+function moveGrid(
+  sheets: readonly Sheet[],
+  tickets: ReadonlyMap<string, Ticket>,
+  ticket: Ticket,
+  target: Sheet,
+  targetSlot: number,
+): Sheet[] {
+  if (target.kind !== "grid") {
+    throw new DomainError("invalid-target", "a grid ticket cannot move onto a full-page sheet");
+  }
+  const plan = planGridMove(sheets, tickets, ticket, target, targetSlot);
+  if (!plan.ok) throw new DomainError(plan.code, plan.message);
+
+  const next = cloneSheets(sheets);
+  const nextTarget = next.find((sheet) => sheet.id === target.id) as GridSheet;
+  const nextSource = next.find((sheet) => sheet.id === plan.sourceId) as GridSheet;
+  const removing = plan.otherBlock ? [...plan.block, ...plan.otherBlock] : plan.block;
+
+  clearTickets(next, new Set(removing));
+  placeBlock(nextTarget, plan.range[0]!, plan.block);
+  if (plan.otherBlock && plan.srcStart !== null) {
+    placeBlock(nextSource, plan.srcStart, plan.otherBlock);
+  }
   return pruneSheets(next);
 }
 
@@ -241,36 +309,23 @@ function moveFull(
   if (target.kind !== "full") {
     throw new DomainError("full-page-on-grid", "a full-page ticket may only move to a full-page sheet");
   }
-  if (target.ticketId === ticketId) {
+  if (target.slots[0] === ticketId) {
     return cloneSheets(sheets);
   }
 
   const source = findTicketSheet(sheets, ticketId)!;
-  const otherTicketId = target.ticketId;
+  const otherTicketId = target.slots[0] ?? null;
   const next = cloneSheets(sheets);
   const nextTarget = next.find((sheet) => sheet.id === target.id);
-  if (!nextTarget || nextTarget.kind !== "full") {
+  const nextSource = next.find((sheet) => sheet.id === source.sheet.id);
+  if (!nextTarget || nextTarget.kind !== "full" || !nextSource || nextSource.kind !== "full") {
     throw new DomainError("invalid-target", `no sheet ${target.id}`);
   }
-  const nextSource = next.find((sheet) => sheet.id === source.sheet.id);
-  if (!nextSource || nextSource.kind !== "full") {
-    throw new DomainError("invalid-target", "full-page ticket source is not a full-page sheet");
-  }
 
-  nextSource.ticketId = otherTicketId;
-  nextTarget.ticketId = ticketId;
+  nextSource.slots[0] = otherTicketId;
+  nextTarget.slots[0] = ticketId;
   void tickets;
   return pruneSheets(next);
-}
-
-function removeBlock(sheets: Sheet[], block: readonly string[]): void {
-  for (const sheet of sheets) {
-    if (sheet.kind !== "grid") continue;
-    for (let i = 0; i < sheet.slots.length; i += 1) {
-      const id = sheet.slots[i];
-      if (id && block.includes(id)) sheet.slots[i] = null;
-    }
-  }
 }
 
 function placeBlock(sheet: GridSheet, start: number, block: readonly string[]): void {
@@ -334,36 +389,38 @@ export function positionOf(
 ): number | null {
   let base = 0;
   for (const sheet of sheets) {
-    if (sheet.kind === "full") {
-      if (sheet.ticketId === ticketId) return base;
-      base += 1;
-      continue;
-    }
-    const slot = slotOf(sheet, ticketId);
+    const slot = sheet.slots.indexOf(ticketId);
     if (slot >= 0) return base + slot;
-    base += GRID_SLOTS;
+    base += sheet.kind === "full" ? 1 : GRID_SLOTS;
   }
   return null;
 }
 
 export function assertInvariants(sheets: readonly Sheet[], tickets: ReadonlyMap<string, Ticket>): void {
   for (const sheet of sheets) {
+    const ids = sheet.slots.filter((id): id is string => id !== null);
+    for (const id of ids) {
+      if (!tickets.has(id)) {
+        throw new Error(`sheet ${sheet.id} references missing ticket ${id}`);
+      }
+    }
+
     if (sheet.kind === "full") {
-      if (sheet.ticketId) {
-        const t = tickets.get(sheet.ticketId);
-        if (!t || t.kind !== "full") {
-          throw new Error(`full sheet ${sheet.id} does not hold a full ticket`);
-        }
+      if (ids.length > 1) {
+        throw new Error(`full sheet ${sheet.id} holds more than one ticket`);
+      }
+      const id = ids[0];
+      if (id && tickets.get(id)!.kind !== "full") {
+        throw new Error(`full sheet ${sheet.id} does not hold a full ticket`);
       }
       continue;
     }
-    const occupied = occupiedSlots(sheet);
-    if (occupied.length > GRID_SLOTS) {
+
+    if (ids.length > GRID_SLOTS) {
       throw new Error(`sheet ${sheet.id} over capacity`);
     }
     const groupRuns: string[] = [];
-    for (const slot of occupied) {
-      const id = sheet.slots[slot]!;
+    for (const id of ids) {
       const groupId = tickets.get(id)!.groupId;
       if (groupRuns[groupRuns.length - 1] !== groupId) groupRuns.push(groupId);
     }

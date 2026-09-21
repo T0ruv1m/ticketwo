@@ -35,7 +35,7 @@ function checkInvariants(store: Store): void {
 
   const seen = new Set<string>();
   for (const sheet of store.rawSheets) {
-    const ids = sheet.kind === "grid" ? sheet.slots : [sheet.ticketId];
+    const ids = sheet.slots;
     for (const id of ids) {
       if (!id) continue;
       const ticket = store.tickets.get(id);
