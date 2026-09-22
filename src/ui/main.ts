@@ -1,5 +1,6 @@
-import type { Batch, Group, Ticket } from "../domain/types.ts";
+import type { Batch, Group, Sheet, Ticket } from "../domain/types.ts";
 import type { BoardView, BoardSheetView } from "../domain/store.ts";
+import { previewBlock } from "../domain/board.ts";
 import { makeIdempotencyKey } from "./keys.ts";
 
 const boardEl = document.getElementById("board") as HTMLDivElement;
@@ -256,9 +257,9 @@ function setHighlights(elements: HTMLElement[]): void {
 }
 
 /**
- * The server moves a whole group block: the grabbed card keeps its index `k`
- * inside the block, so the block lands starting at `slot - k`. Preview exactly
- * that range, not just the slot under the cursor.
+ * The server moves a whole group block, so preview exactly the slots the block
+ * would land on. The rule itself lives in the domain (`previewBlock`), so the
+ * highlight can never drift from where the server lands the block.
  */
 function previewFor(ticketId: string, target: { sheetId: string; slot: number }): HTMLElement[] {
   const ticket = board.tickets.find((t) => t.id === ticketId);
@@ -272,25 +273,14 @@ function previewFor(ticketId: string, target: { sheetId: string; slot: number })
     return sheet.kind === "full" && fullSheet ? [fullSheet] : [];
   }
 
-  if (sheet.kind !== "grid" || ticket.volumeIndex === null) return [];
-  const blockSize = board.tickets.filter((t) => t.groupId === ticket.groupId).length;
-  const start = target.slot - (ticket.volumeIndex - 1);
-  if (start < 0 || start + blockSize > 10) return [];
-  const range = Array.from({ length: blockSize }, (_, i) => start + i);
-  const slots = sheet.slots ?? [];
-  const own = new Set(board.tickets.filter((t) => t.groupId === ticket.groupId).map((t) => t.id));
-  const others = range
-    .map((slot) => slots[slot] ?? null)
-    .filter((t): t is Ticket => t !== null && !own.has(t.id));
-
-  if (others.length > 0) {
-    const otherGroupId = others[0]!.groupId;
-    const exactSwap =
-      others.length === blockSize &&
-      others.every((t) => t.groupId === otherGroupId) &&
-      board.tickets.filter((t) => t.groupId === otherGroupId).length === blockSize;
-    if (!exactSwap) return [];
-  }
+  const tickets = new Map(board.tickets.map((t) => [t.id, t]));
+  const sheets: Sheet[] = board.sheets.map((s) =>
+    s.kind === "grid"
+      ? { id: s.id, kind: "grid", slots: (s.slots ?? []).map((t) => t?.id ?? null) }
+      : { id: s.id, kind: "full", slots: [s.ticket?.id ?? null] },
+  );
+  const range = previewBlock(sheets, tickets, ticketId, target.sheetId, target.slot);
+  if (!range) return [];
 
   const elements: HTMLElement[] = [];
   for (const slot of range) {
