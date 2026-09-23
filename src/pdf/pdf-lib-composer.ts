@@ -309,46 +309,9 @@ function drawFullPage(
   const footerY = barcodeTop + 10;
   drawCentered(page, FOOTER, regular, footerSize, maxW, centerX, footerY, MUTED);
 
-  // Batch codes sit above the footer; they wrap, and shrink when there are many.
-  let loteSize = 18;
-  let rows = layoutBatchRows(ticket.batchCodes, regular, loteSize, maxW);
-  if (rows.length > 3) {
-    loteSize = 12;
-    rows = layoutBatchRows(ticket.batchCodes, regular, loteSize, maxW);
-  }
-  const box = Math.round(loteSize * 0.78);
-  const textboxGap = Math.round(loteSize * 0.39);
-  const gap = Math.round(loteSize * 0.89);
-  const rowStep = loteSize + 8;
-  const lotesBottom = footerY + footerSize + 18;
-  const lotesTop = lotesBottom + Math.max(0, rows.length - 1) * rowStep;
-  rows.forEach((row, index) => {
-    const y = lotesTop - index * rowStep;
-    const rowWidth =
-      row.reduce((sum, entry) => sum + entry.textW + textboxGap + box, 0) + gap * (row.length - 1);
-    let x = centerX - rowWidth / 2;
-    for (const entry of row) {
-      page.drawRectangle({
-        x,
-        y: y + 1,
-        width: box,
-        height: box,
-        borderColor: OUTLINE,
-        borderWidth: 1,
-      });
-      page.drawText(entry.text, {
-        x: x + box + textboxGap,
-        y,
-        size: entry.size,
-        font: regular,
-        color: MUTED,
-      });
-      x += entry.textW + textboxGap + box + gap;
-    }
-  });
-
-  // Identity block, flowing up from the batch codes toward the volume count.
-  let y = lotesTop + loteSize + 22;
+  // Identity block, flowing up from the footer toward the volume count. A full
+  // page covers a whole group, so it has no per-volume lote checkboxes.
+  let y = footerY + footerSize + 26;
   if (ticket.nfeNumber) {
     drawCentered(page, `NF-e ${ticket.nfeNumber}`, regular, 22, maxW, centerX, y, MUTED);
     y += 34;
@@ -371,54 +334,6 @@ function drawCentered(
   const shown = fit(text, font, size, maxWidth);
   const width = font.widthOfTextAtSize(shown, size);
   page.drawText(shown, { x: centerX - width / 2, y, size, font, color });
-}
-
-interface BatchEntry {
-  text: string;
-  textW: number;
-  size: number;
-}
-
-/**
- * Lay batch codes into rows that fit `maxWidth`, keeping the checkbox + text
- * together. A single code that is too wide shrinks first, then truncates.
- */
-function layoutBatchRows(
-  codes: readonly string[],
-  font: PDFFont,
-  size: number,
-  maxWidth: number,
-): BatchEntry[][] {
-  const box = Math.round(size * 0.78);
-  const textboxGap = Math.round(size * 0.39);
-  const gap = Math.round(size * 0.89);
-  const rows: BatchEntry[][] = [];
-  let row: BatchEntry[] = [];
-  let rowWidth = 0;
-
-  for (const code of codes) {
-    let entrySize = size;
-    let text = code;
-    let textW = font.widthOfTextAtSize(text, entrySize);
-    while (entrySize > 10 && textW + textboxGap + box > maxWidth) {
-      entrySize -= 1;
-      textW = font.widthOfTextAtSize(text, entrySize);
-    }
-    if (textW + textboxGap + box > maxWidth) {
-      text = fit(text, font, entrySize, maxWidth - textboxGap - box);
-      textW = font.widthOfTextAtSize(text, entrySize);
-    }
-    const itemW = textW + textboxGap + box;
-    if (row.length > 0 && rowWidth + gap + itemW > maxWidth) {
-      rows.push(row);
-      row = [];
-      rowWidth = 0;
-    }
-    rowWidth += (row.length > 0 ? gap : 0) + itemW;
-    row.push({ text, textW, size: entrySize });
-  }
-  if (row.length > 0) rows.push(row);
-  return rows;
 }
 
 function fit(text: string, font: PDFFont, size: number, maxWidth: number): string {
