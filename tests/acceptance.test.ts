@@ -134,13 +134,33 @@ describe("Inherited data", () => {
       project: "ACME",
       destination: "Berlin",
       totalVolumes: 8,
+      nfeNumber: "521604",
     });
     expect(
       result.tickets.every(
         (t) =>
-          t.project === "ACME" && t.destination === "Berlin" && t.groupId === "G1" && t.totalVolumes === 8,
+          t.project === "ACME" &&
+          t.destination === "Berlin" &&
+          t.groupId === "G1" &&
+          t.totalVolumes === 8 &&
+          t.nfeNumber === "521604",
       ),
     ).toBe(true);
+  });
+
+  it("a group without an NF-e number stores null", () => {
+    const { store } = makeStore();
+    const result = store.addGroup({ id: "G1", project: "ACME", totalVolumes: 2 });
+    expect(result.group.nfeNumber).toBeNull();
+    expect(result.tickets.every((t) => t.nfeNumber === null)).toBe(true);
+  });
+
+  it("re-adding a group with a different NF-e number is a mismatch", () => {
+    const { store } = makeStore();
+    store.addGroup({ id: "G1", project: "ACME", totalVolumes: 2, nfeNumber: "521604" });
+    expect(() =>
+      store.addGroup({ id: "G1", project: "ACME", totalVolumes: 2, nfeNumber: "999999" }),
+    ).toThrow(/already exists with different attributes/);
   });
 });
 

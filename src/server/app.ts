@@ -5,12 +5,23 @@ import path from "node:path";
 import { z } from "zod";
 import { isDomainError } from "../domain/errors.ts";
 import { Store } from "../domain/store.ts";
+import { normalizeAccessKey, NfeLookupError, type NfeLookupClient } from "./nfe.ts";
+
+const nfeBatchSchema = z.object({
+  code: z.string(),
+  expiry: z.string(),
+  quantity: z.number(),
+});
 
 const createGroupSchema = z.object({
   id: z.string().optional(),
   project: z.string(),
   destination: z.string().optional(),
   totalVolumes: z.number(),
+  nfeNumber: z.string().optional(),
+  batches: z.array(nfeBatchSchema).optional(),
+  // Manually typed batch codes; no lookup metadata exists for them.
+  codes: z.array(z.string()).optional(),
 });
 
 const moveSchema = z.object({
@@ -30,6 +41,7 @@ const printSchema = z.object({
 
 export interface AppOptions {
   enableTestRoutes?: boolean;
+  nfeClient?: NfeLookupClient;
 }
 
 export function createApp(store: Store, options: AppOptions = {}): express.Express {
@@ -38,6 +50,20 @@ export function createApp(store: Store, options: AppOptions = {}): express.Expre
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
+  });
+
+  app.get("/api/nfe/:key", async (req, res, next) => {
+    const nfe = options.nfeClient;
+    if (!nfe) {
+      res.status(503).json({ error: { code: "nfe-disabled", message: "nfe-lookup is not configured" } });
+      return;
+    }
+    try {
+      const key = normalizeAccessKey(req.params.key ?? "");
+      res.json(await nfe.lookup(key));
+    } catch (error) {
+      next(error);
+    }
   });
 
   if (options.enableTestRoutes) {
@@ -53,6 +79,13 @@ export function createApp(store: Store, options: AppOptions = {}): express.Expre
 
   app.post("/api/groups", (req, res) => {
     const input = createGroupSchema.parse(req.body);
+    if (input.codes?.length) {
+      const known = new Set((input.batches ?? []).map((batch) => batch.code));
+      input.batches = [
+        ...(input.batches ?? []),
+        ...input.codes.filter((code) => !known.has(code)).map((code) => ({ code, expiry: "", quantity: 0 })),
+      ];
+    }
     res.status(201).json(store.addGroup(input));
   });
 
@@ -101,6 +134,10 @@ export function createApp(store: Store, options: AppOptions = {}): express.Expre
   });
 
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (error instanceof NfeLookupError) {
+      res.status(error.status).json({ error: { code: error.code, message: error.message } });
+      return;
+    }
     if (isDomainError(error)) {
       res.status(400).json({ error: { code: error.code, message: error.message } });
       return;

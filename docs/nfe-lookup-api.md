@@ -53,6 +53,11 @@ curl http://localhost:5000/nfe/31240100874929000140550010005216041964324179
 
 ## Integration with tickets2
 
+The tickets2 server proxies lookups: `GET /api/nfe/{key}` (key digits are
+normalized, 44 required). The upstream base URL comes from `NFE_LOOKUP_URL`
+(default `http://localhost:5000`; set it empty to disable lookups — the
+endpoint then answers `503 nfe-disabled`).
+
 Feed `POST /api/groups` (see `src/server/app.ts`) with:
 
 - `id` ← `accessKey` (globally unique — the 44-digit key)

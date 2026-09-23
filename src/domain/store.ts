@@ -96,7 +96,10 @@ export class Store {
         const same =
           existing.project === input.project.trim() &&
           existing.destination === (input.destination ?? "").trim() &&
-          existing.totalVolumes === input.totalVolumes;
+          existing.totalVolumes === input.totalVolumes &&
+          existing.nfeNumber === (input.nfeNumber?.trim() || null) &&
+          existing.batches.length === (input.batches?.length ?? 0) &&
+          existing.batches.every((batch, i) => batch.code === input.batches?.[i]?.code);
         if (!same) {
           throw new DomainError(
             "duplicate-group-mismatch",
@@ -313,6 +316,8 @@ function snapshot(ticket: Ticket): BatchSnapshot {
     kind: ticket.kind,
     volumeIndex: ticket.volumeIndex,
     totalVolumes: ticket.totalVolumes,
+    nfeNumber: ticket.nfeNumber,
+    batchCodes: ticket.batchCodes,
   };
 }
 
