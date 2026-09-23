@@ -548,15 +548,112 @@ document.getElementById("print")!.addEventListener("click", async () => {
   }
 });
 
-function setDataList(id: string, options: readonly { id: string; name: string }[]): void {
-  const datalist = document.getElementById(id) as HTMLDataListElement;
-  datalist.innerHTML = options
-    .map((option) => `<option value="${esc(option.name)}">`)
-    .join("");
+interface ComboOption {
+  id: string;
+  name: string;
 }
 
-setDataList("project-options", PROJETOS);
-setDataList("municipio-options", MUNICIPIOS);
+/**
+ * A small accessible combobox: opens the full list on focus, filters as you
+ * type (case- and accent-insensitive), and supports arrows/Enter/Escape.
+ */
+function setupCombo(
+  input: HTMLInputElement,
+  list: HTMLUListElement,
+  options: readonly ComboOption[],
+): void {
+  let matches: ComboOption[] = [];
+  let active = -1;
+  let navigated = false;
+
+  const fold = (value: string): string =>
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+
+  function open(filter: string): void {
+    const query = fold(filter.trim());
+    matches = query ? options.filter((option) => fold(option.name).includes(query)) : [...options];
+    active = matches.length > 0 ? 0 : -1;
+    navigated = false;
+    list.innerHTML = matches
+      .map(
+        (option, index) =>
+          `<li class="combo-option" role="option" data-index="${index}" aria-selected="${
+            index === active
+          }">${esc(option.name)}</li>`,
+      )
+      .join("");
+    list.hidden = matches.length === 0;
+    input.setAttribute("aria-expanded", String(!list.hidden));
+  }
+
+  function close(): void {
+    list.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    active = -1;
+  }
+
+  function highlight(index: number): void {
+    if (matches.length === 0) return;
+    active = (index + matches.length) % matches.length;
+    for (const element of list.querySelectorAll<HTMLElement>(".combo-option")) {
+      element.setAttribute("aria-selected", String(Number(element.dataset.index) === active));
+    }
+    list.querySelector<HTMLElement>(`[data-index="${active}"]`)?.scrollIntoView({ block: "nearest" });
+  }
+
+  function choose(index: number): void {
+    const option = matches[index];
+    if (!option) return;
+    input.value = option.name;
+    close();
+  }
+
+  input.addEventListener("focus", () => open(input.value));
+  input.addEventListener("click", () => {
+    if (list.hidden) open(input.value);
+  });
+  input.addEventListener("input", () => open(input.value));
+  input.addEventListener("blur", () => window.setTimeout(close, 120));
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (list.hidden) open(input.value);
+      else highlight(active + 1);
+      navigated = true;
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      highlight(active - 1);
+      navigated = true;
+    } else if (event.key === "Enter") {
+      if (!list.hidden && navigated && active >= 0) {
+        event.preventDefault();
+        choose(active);
+      }
+    } else if (event.key === "Escape" || event.key === "Tab") {
+      close();
+    }
+  });
+  list.addEventListener("mousedown", (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>(".combo-option");
+    if (!target) return;
+    event.preventDefault();
+    choose(Number(target.dataset.index));
+  });
+}
+
+setupCombo(
+  document.getElementById("project-input") as HTMLInputElement,
+  document.getElementById("project-list") as HTMLUListElement,
+  PROJETOS,
+);
+setupCombo(
+  document.getElementById("municipio-input") as HTMLInputElement,
+  document.getElementById("municipio-list") as HTMLUListElement,
+  MUNICIPIOS,
+);
 
 load().catch((err) => setStatus(friendly(err), true));
 

@@ -36,10 +36,37 @@
         <aside>
           <form id="add-group" autocomplete="off">
             <h2>Nova remessa</h2>
-            <label>Projeto <input name="project" required list="project-options" /></label>
-            <datalist id="project-options"></datalist>
-            <label>Município <input name="destination" list="municipio-options" /></label>
-            <datalist id="municipio-options"></datalist>
+            <div class="combo-field">
+              <label for="project-input">Projeto</label>
+              <div class="combo">
+                <input
+                  id="project-input"
+                  name="project"
+                  required
+                  autocomplete="off"
+                  role="combobox"
+                  aria-expanded="false"
+                  aria-autocomplete="list"
+                  aria-controls="project-list"
+                />
+                <ul id="project-list" class="combo-list" role="listbox" hidden></ul>
+              </div>
+            </div>
+            <div class="combo-field">
+              <label for="municipio-input">Município</label>
+              <div class="combo">
+                <input
+                  id="municipio-input"
+                  name="destination"
+                  autocomplete="off"
+                  role="combobox"
+                  aria-expanded="false"
+                  aria-autocomplete="list"
+                  aria-controls="municipio-list"
+                />
+                <ul id="municipio-list" class="combo-list" role="listbox" hidden></ul>
+              </div>
+            </div>
             <label>Volumes <input name="totalVolumes" type="number" min="1" max="100000" step="1" required /></label>
             <label>Número da NF-e <input name="nfeNumber" placeholder="opcional" /></label>
             <label>Lote(s) <input name="batchCodes" placeholder="B23L0947, B23L0948 (opcional)" /></label>
