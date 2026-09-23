@@ -9,6 +9,11 @@
     <div id="app">
       <header>
         <h1>tickets</h1>
+        <div class="actions">
+          <button id="auto-arrange" type="button">Auto-organizar</button>
+          <button id="print" type="button" class="primary">Imprimir lote</button>
+        </div>
+        <div id="status" role="status" aria-live="polite"></div>
         <div class="lookup">
           <label for="access-key">Chave de acesso (NF-e)</label>
           <div class="key-row">
@@ -22,11 +27,6 @@
             <button type="button" id="lookup-nfe">Consultar</button>
           </div>
         </div>
-        <div class="actions">
-          <button id="auto-arrange" type="button">Auto-organizar</button>
-          <button id="print" type="button" class="primary">Imprimir lote</button>
-        </div>
-        <div id="status" role="status" aria-live="polite"></div>
       </header>
       <main>
         <section id="board-panel" aria-label="Prancheta">
@@ -36,13 +36,6 @@
         <aside>
           <form id="add-group" autocomplete="off">
             <h2>Nova remessa</h2>
-            <label
-              >Chave de acesso (NF-e)
-              <div class="key-row">
-                <input name="accessKey" inputmode="numeric" placeholder="44 dígitos" />
-                <button type="button" id="lookup-nfe">Consultar</button>
-              </div>
-            </label>
             <label>Projeto <input name="project" required list="project-options" /></label>
             <datalist id="project-options"></datalist>
             <label>Município <input name="destination" list="municipio-options" /></label>
