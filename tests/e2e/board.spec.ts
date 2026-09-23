@@ -61,7 +61,7 @@ test("adversarial: a partial collision is rejected and nothing moves", async ({ 
 
   await dragCardTo(page, cardByVolume(page, "G1", 1), slot(page, 0, 3));
 
-  await expect(page.locator("#status")).toContainText("Can't drop there");
+  await expect(page.locator("#status")).toContainText("Não dá para soltar aí");
   expect(await occupancy(page, 0)).toEqual(before);
   expect(before).toEqual(["G1", "G1", "G1", "G2", "G2", null, null, null, null, null]);
 });
@@ -138,7 +138,7 @@ test("auto-arrange tidies a hand-moved board", async ({ page, request }) => {
   await dragCardTo(page, cardByVolume(page, "G1", 1), slot(page, 0, 6));
   expect(await occupancy(page, 0)).toEqual([null, null, null, "G2", "G2", "G2", "G1", "G1", "G1", null]);
 
-  await page.getByRole("button", { name: "Auto-arrange" }).click();
+  await page.getByRole("button", { name: "Auto-organizar" }).click();
   await expect
     .poll(async () => await occupancy(page, 0))
     .toEqual(["G1", "G1", "G1", "G2", "G2", "G2", null, null, null, null]);
@@ -154,21 +154,21 @@ test("duplicate queued add shows the existing tickets instead of duplicating", a
   await addGroup(request, "G1", 3);
   await page.reload();
 
-  await page.getByLabel("Project").fill("ACME");
-  await page.getByLabel("Destination").fill("Berlin");
+  await page.getByLabel("Projeto").fill("ACME");
+  await page.getByLabel("Município").fill("LAGOA DOURADA");
   await page.getByLabel("Volumes").fill("3");
-  await page.getByLabel("Group id (optional)").fill("G1");
-  await page.getByRole("button", { name: "Add to queue" }).click();
+  await page.getByLabel("ID do grupo (opcional)").fill("G1");
+  await page.getByRole("button", { name: "Adicionar à fila" }).click();
 
-  await expect(page.locator("#status")).toContainText("Already queued");
+  await expect(page.locator("#status")).toContainText("Já está na fila");
   await expect(page.locator('[data-testid="queue-group"]')).toHaveCount(1);
   await expect(page.locator('[data-testid="ticket"]')).toHaveCount(3);
 });
 
 test("adversarial: whitespace project is rejected", async ({ page }) => {
-  await page.getByLabel("Project").fill("   ");
+  await page.getByLabel("Projeto").fill("   ");
   await page.getByLabel("Volumes").fill("3");
-  await page.getByRole("button", { name: "Add to queue" }).click();
+  await page.getByRole("button", { name: "Adicionar à fila" }).click();
   await expect(page.locator("#status")).toContainText("project must be a non-empty string");
   await expect(page.locator('[data-testid="ticket"]')).toHaveCount(0);
 });
@@ -199,4 +199,69 @@ test("deleting a queued group removes its pending tickets", async ({ page, reque
   await expect(page.locator('[data-testid="queue-group"]')).toHaveCount(1);
   await expect(page.locator('[data-group-id="G1"]')).toHaveCount(0);
   expect(await occupancy(page, 0)).toEqual([null, null, null, "G2", "G2", null, null, null, null, null]);
+});
+
+test("an nfe access-key lookup fills the form and stamps tickets with the NF-e number", async ({
+  page,
+  request,
+}) => {
+  const KEY = "31240100874929000140550010005216041964324179";
+  await page.route(`**/api/nfe/${KEY}`, async (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        accessKey: KEY,
+        nfeNumber: "521604",
+        volumes: 2,
+        batches: [{ code: "B23L0947", expiry: "2025-06-30", quantity: 20 }],
+        source: "drive:test",
+      }),
+    });
+  });
+  await request.post("/api/test/reset");
+  await open(page);
+
+  await page.getByLabel("Chave de acesso (NF-e)").fill(KEY);
+  await page.getByRole("button", { name: "Consultar" }).click();
+  await expect(page.locator("#status")).toContainText("NF-e 521604");
+  await expect(page.getByLabel("Volumes")).toHaveValue("2");
+  await expect(page.getByLabel("Número da NF-e")).toHaveValue("521604");
+  await expect(page.getByLabel("ID do grupo (opcional)")).toHaveValue(KEY);
+
+  await page.getByLabel("Projeto").fill("ACME");
+  await page.getByLabel("Município").fill("LAGOA DOURADA");
+  await page.getByRole("button", { name: "Adicionar à fila" }).click();
+
+  await expect(page.locator('[data-testid="ticket"]')).toHaveCount(2);
+  await expect(page.locator('[data-testid="nfe-number"]')).toHaveCount(2);
+  await expect(page.locator('[data-testid="nfe-number"]').first()).toHaveText("NF-e 521604");
+  await expect(page.locator('[data-testid="lote-codes"]')).toHaveCount(2);
+  await expect(page.locator('[data-testid="lote-codes"]').first()).toHaveText("Lote B23L0947");
+  // The 44-digit access key never appears on a card.
+  await expect(page.locator('[data-testid="ticket"]')).not.toContainText(KEY);
+});
+
+test("adversarial: a lookup failure surfaces a friendly message and leaves the form untouched", async ({
+  page,
+  request,
+}) => {
+  const KEY = "31240100874929000140550010005216041964324179";
+  await page.route(`**/api/nfe/${KEY}`, async (route) => {
+    route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "nfe-not-found", message: "no NF-e XML for that key" } }),
+    });
+  });
+  await request.post("/api/test/reset");
+  await open(page);
+
+  await page.getByLabel("Volumes").fill("3");
+  await page.getByLabel("Chave de acesso (NF-e)").fill(KEY);
+  await page.getByRole("button", { name: "Consultar" }).click();
+
+  await expect(page.locator("#status")).toContainText("no NF-e XML for that key");
+  await expect(page.getByLabel("Volumes")).toHaveValue("3");
+  await expect(page.getByLabel("Número da NF-e")).toHaveValue("");
 });

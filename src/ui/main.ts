@@ -1,6 +1,7 @@
 import type { Batch, Group, Sheet, Ticket } from "../domain/types.ts";
 import type { BoardView, BoardSheetView } from "../domain/store.ts";
 import { previewBlock } from "../domain/board.ts";
+import { MUNICIPIOS, PROJETOS } from "./picklists.ts";
 import { makeIdempotencyKey } from "./keys.ts";
 
 const boardEl = document.getElementById("board") as HTMLDivElement;
@@ -54,30 +55,44 @@ function setStatus(message: string, error = false): void {
 }
 
 const FRIENDLY: Record<string, string> = {
-  "out-of-bounds": "That block does not fit there.",
-  collision: "Can't drop there — another group is in the way.",
-  "full-page-on-grid": "A full-page ticket needs a full-page sheet.",
-  "invalid-target": "That is not a valid drop target.",
-  "ticket-not-found": "That ticket is no longer on the board.",
+  "out-of-bounds": "Este bloco não cabe nessa posição.",
+  collision: "Não dá para soltar aí — outro grupo está no caminho.",
+  "full-page-on-grid": "Um ticket de página inteira precisa de uma folha de página inteira.",
+  "invalid-target": "Esse não é um destino de soltar válido.",
+  "ticket-not-found": "Esse ticket não está mais na prancheta.",
 };
 
 function friendly(err: unknown): string {
   if (err instanceof ApiError) return FRIENDLY[err.code] ?? err.message;
-  return err instanceof Error ? err.message : "Something went wrong.";
+  return err instanceof Error ? err.message : "Algo deu errado.";
 }
 
 function cardHtml(ticket: Ticket): string {
-  const label = `${ticket.project}, ${ticket.destination || "no destination"}, ${ticket.groupId}, ${
-    ticket.kind === "full" ? `${ticket.totalVolumes} volumes` : `${ticket.volumeIndex} of ${ticket.totalVolumes}`
-  }`;
+  // The 44-digit access key never shows on the card; the NF-e number and lote
+  // codes identify the shipment. Plain groups fall back to the group id.
+  const labeled = Boolean(ticket.nfeNumber) || ticket.batchCodes.length > 0;
+  const label = `${ticket.project}, ${ticket.destination || "sem município"}, ${
+    labeled ? (ticket.nfeNumber ? `NF-e ${ticket.nfeNumber}` : "") + (ticket.batchCodes.length ? ` lote ${ticket.batchCodes.join(", ")}` : "") : ticket.groupId
+  }, ${ticket.kind === "full" ? `${ticket.totalVolumes} volumes` : `${ticket.volumeIndex} de ${ticket.totalVolumes}`}`;
+  const nfe = ticket.nfeNumber
+    ? `<div class="nfe" data-testid="nfe-number">NF-e ${esc(ticket.nfeNumber)}</div>`
+    : "";
+  const lote = ticket.batchCodes.length
+    ? `<div class="nfe" data-testid="lote-codes">Lote ${esc(ticket.batchCodes.join(", "))}</div>`
+    : "";
+  const meta = labeled
+    ? esc(ticket.destination || "—")
+    : `${esc(ticket.destination || "—")} · ${esc(ticket.groupId)}`;
   if (ticket.kind === "full") {
     return `<div class="card full-card" data-testid="ticket" data-ticket-id="${esc(ticket.id)}" data-group-id="${esc(
       ticket.groupId,
     )}" data-kind="full" tabindex="0" role="button" aria-label="${esc(label)}">
+      ${nfe}
+      ${lote}
       <div class="big">${esc(ticket.totalVolumes)}</div>
-      <div class="label">TOTAL VOLUMES</div>
+      <div class="label">TOTAL DE VOLUMES</div>
       <div class="project">${esc(ticket.project)}</div>
-      <div class="meta">${esc(ticket.destination || "—")} · ${esc(ticket.groupId)}</div>
+      <div class="meta">${meta}</div>
     </div>`;
   }
   return `<div class="card" data-testid="ticket" data-ticket-id="${esc(ticket.id)}" data-group-id="${esc(
@@ -85,9 +100,11 @@ function cardHtml(ticket: Ticket): string {
   )}" data-kind="grid" data-volume-index="${ticket.volumeIndex}" tabindex="0" role="button" aria-label="${esc(
     label,
   )}">
-    <div class="index">${esc(ticket.volumeIndex)} of ${esc(ticket.totalVolumes)}</div>
+    <div class="index">${esc(ticket.volumeIndex)} de ${esc(ticket.totalVolumes)}</div>
+    ${nfe}
+    ${lote}
     <div class="project">${esc(ticket.project)}</div>
-    <div class="meta">${esc(ticket.destination || "—")} · ${esc(ticket.groupId)}</div>
+    <div class="meta">${meta}</div>
   </div>`;
 }
 
@@ -150,15 +167,15 @@ function renderGroups(): void {
           (group) => `<li class="queue-item" data-testid="queue-group" data-group-id="${esc(group.id)}">
             <div class="grow">
               <div><strong>${esc(group.project)}</strong> · ${esc(group.destination || "—")}</div>
-              <div class="muted">${esc(group.id)} · ${counts.get(group.id) ?? 0} ticket(s)</div>
+              <div class="muted">${esc(group.id)} · ${counts.get(group.id) ?? 0} etiqueta(s)</div>
             </div>
             <button type="button" class="icon" data-action="delete-group" data-group-id="${esc(
               group.id,
-            )}" aria-label="Delete group ${esc(group.id)}">✕</button>
+            )}" aria-label="Excluir o grupo ${esc(group.id)}">✕</button>
           </li>`,
         )
         .join("")
-    : `<li class="muted">Queue is empty.</li>`;
+    : `<li class="muted">A fila está vazia.</li>`;
 }
 
 function renderBatches(): void {
@@ -168,17 +185,17 @@ function renderBatches(): void {
         .map(
           (batch: Batch) => `<li class="batch-item" data-testid="batch" data-batch-id="${esc(batch.id)}">
             <div class="grow">
-              <div>${batch.tickets.length} ticket(s)</div>
+              <div>${batch.tickets.length} etiqueta(s)</div>
               <div class="muted">${esc(batch.id.slice(0, 8))} · ${esc(batch.printedAt)}</div>
             </div>
-            <a href="/api/batches/${encodeURIComponent(batch.id)}/pdf" target="_blank" rel="noopener" aria-label="Open composed PDF to print">Print PDF</a>
+            <a href="/api/batches/${encodeURIComponent(batch.id)}/pdf" target="_blank" rel="noopener" aria-label="Abrir o PDF composto para imprimir">Imprimir PDF</a>
             <button type="button" class="icon" data-action="delete-batch" data-batch-id="${esc(
               batch.id,
-            )}" aria-label="Delete batch">✕</button>
+            )}" aria-label="Excluir o lote">✕</button>
           </li>`,
         )
         .join("")
-    : `<li class="muted">Nothing printed yet.</li>`;
+    : `<li class="muted">Nada impresso ainda.</li>`;
 }
 
 let latestBatches: Batch[] = [];
@@ -334,7 +351,7 @@ window.addEventListener("pointerup", async (event) => {
   current.ghost?.remove();
   const target = dropTargetAt(event.clientX, event.clientY);
   if (!target) {
-    setStatus("Dropped outside a sheet — nothing moved.");
+    setStatus("Solto fora de uma folha — nada foi movido.");
     return;
   }
   await moveTo("/api/move", { ticketId: current.ticketId, sheetId: target.sheetId, slot: target.slot });
@@ -386,6 +403,67 @@ function focusSheet(sheetId: string | null): void {
 
 // ---- actions -------------------------------------------------------------
 
+interface NfeLookup {
+  accessKey: string;
+  nfeNumber: string;
+  volumes: number | null;
+  batches: { code: string; expiry: string; quantity: number }[];
+}
+
+const accessKeyInput = form.elements.namedItem("accessKey") as HTMLInputElement;
+const nfeNumberInput = form.elements.namedItem("nfeNumber") as HTMLInputElement;
+const totalVolumesInput = form.elements.namedItem("totalVolumes") as HTMLInputElement;
+let pendingBatches: NfeLookup["batches"] = [];
+
+const ACCESS_KEY_LENGTH = 44;
+let lookupInFlight = false;
+let lastLookedUpKey = "";
+
+async function lookupNfe(): Promise<void> {
+  const digits = accessKeyInput.value.replace(/\D/g, "");
+  if (!digits) {
+    setStatus("Digite uma chave de acesso para consultar.", true);
+    return;
+  }
+  if (lookupInFlight || digits === lastLookedUpKey) return;
+  const button = document.getElementById("lookup-nfe") as HTMLButtonElement;
+  lookupInFlight = true;
+  button.disabled = true;
+  try {
+    const nfe = await api<NfeLookup>(`/api/nfe/${encodeURIComponent(digits)}`);
+    accessKeyInput.value = nfe.accessKey;
+    lastLookedUpKey = nfe.accessKey;
+    nfeNumberInput.value = nfe.nfeNumber;
+    pendingBatches = nfe.batches ?? [];
+    if (nfe.volumes !== null && nfe.volumes > 0) totalVolumesInput.value = String(nfe.volumes);
+    setStatus(`NF-e ${nfe.nfeNumber} — ${nfe.volumes ?? "?"} volume(s). Revise e adicione à fila.`);
+  } catch (err) {
+    lastLookedUpKey = "";
+    setStatus(friendly(err), true);
+  } finally {
+    lookupInFlight = false;
+    button.disabled = false;
+  }
+}
+
+document.getElementById("lookup-nfe")!.addEventListener("click", () => {
+  void lookupNfe();
+});
+
+// Auto-consult once the key is complete, so a paste or a full type just works.
+accessKeyInput.addEventListener("input", () => {
+  if (accessKeyInput.value.replace(/\D/g, "").length === ACCESS_KEY_LENGTH) {
+    void lookupNfe();
+  }
+});
+
+accessKeyInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void lookupNfe();
+  }
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(form);
@@ -396,10 +474,21 @@ form.addEventListener("submit", async (event) => {
   };
   const id = String(data.get("id") ?? "").trim();
   if (id) body.id = id;
+  const nfeNumber = String(data.get("nfeNumber") ?? "").trim();
+  if (nfeNumber) body.nfeNumber = nfeNumber;
+  const codes = String(data.get("batchCodes") ?? "")
+    .split(/[\s,;]+/)
+    .filter(Boolean);
+  if (codes.length > 0) body.codes = codes;
+  if (pendingBatches.length > 0) body.batches = pendingBatches;
+  pendingBatches = [];
+  const accessKey = String(data.get("accessKey") ?? "").replace(/\D/g, "");
+  if (accessKey.length === 44) body.id = accessKey;
   try {
     const result = await api<{ duplicate: boolean; tickets: Ticket[] }>("/api/groups", body);
-    setStatus(result.duplicate ? `Already queued — showing the existing ${result.tickets.length} ticket(s).` : "");
+    setStatus(result.duplicate ? `Já está na fila — exibindo os ${result.tickets.length} etiqueta(s) existentes.` : "");
     form.reset();
+    pendingBatches = [];
     await load();
   } catch (err) {
     setStatus(friendly(err), true);
@@ -421,7 +510,7 @@ batchesEl.addEventListener("click", async (event) => {
   const button = (event.target as HTMLElement).closest<HTMLElement>('[data-action="delete-batch"]');
   if (!button) return;
   const id = button.dataset.batchId ?? "";
-  if (!window.confirm("Delete this printed batch? This is permanent.")) return;
+  if (!window.confirm("Excluir este lote impresso? Isto é permanente.")) return;
   try {
     await api(`/api/batches/${encodeURIComponent(id)}`, undefined, "DELETE");
     await load();
@@ -433,7 +522,7 @@ batchesEl.addEventListener("click", async (event) => {
 document.getElementById("auto-arrange")!.addEventListener("click", async () => {
   try {
     const next = await api<BoardView>("/api/auto-arrange", {});
-    setStatus("Tidied up.");
+    setStatus("Tudo organizado.");
     await refreshFrom(next);
   } catch (err) {
     setStatus(friendly(err), true);
@@ -447,17 +536,27 @@ document.getElementById("print")!.addEventListener("click", async () => {
       { printed: true; batch: Batch; idempotent: boolean } | { printed: false; reason: string }
     >("/api/print", { idempotencyKey: printKey });
     if (result.printed) {
-      setStatus(`Printed ${result.batch.tickets.length} ticket(s).`);
+      setStatus(`Imprimidos ${result.batch.tickets.length} etiqueta(s).`);
       printKey = null;
     } else {
-      setStatus("Queue is empty — nothing to print.");
+      setStatus("A fila está vazia — nada para imprimir.");
       printKey = null;
     }
     await load();
   } catch (err) {
-    setStatus(`Print failed: ${friendly(err)} Queue unchanged.`, true);
+    setStatus(`Falha ao imprimir: ${friendly(err)} Fila inalterada.`, true);
   }
 });
+
+function setDataList(id: string, options: readonly { id: string; name: string }[]): void {
+  const datalist = document.getElementById(id) as HTMLDataListElement;
+  datalist.innerHTML = options
+    .map((option) => `<option value="${esc(option.name)}">`)
+    .join("");
+}
+
+setDataList("project-options", PROJETOS);
+setDataList("municipio-options", MUNICIPIOS);
 
 load().catch((err) => setStatus(friendly(err), true));
 

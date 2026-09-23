@@ -58,6 +58,18 @@ h2 {
   gap: 8px;
 }
 
+.lookup {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.lookup .key-row input {
+  flex: 0 0 auto;
+  width: 26ch;
+  font-variant-numeric: tabular-nums;
+}
+
 button {
   background: var(--panel-2);
   color: var(--ink);
@@ -208,6 +220,18 @@ main {
   font-size: 12px;
 }
 
+.card .nfe {
+  font-size: 9px;
+  color: #5a5f6b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card.full-card .nfe {
+  font-size: 13px;
+}
+
 .card .project {
   font-weight: 600;
   font-size: 11px;
@@ -289,6 +313,24 @@ input {
   color: var(--ink);
   padding: 6px 8px;
   font-size: 13px;
+}
+
+input[readonly] {
+  color: var(--muted);
+}
+
+.key-row {
+  display: flex;
+  gap: 6px;
+}
+
+.key-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.key-row button {
+  flex: 0 0 auto;
 }
 
 ul {
