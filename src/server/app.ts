@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { z } from "zod";
 import { isDomainError } from "../domain/errors.ts";
-import { Store } from "../domain/store.ts";
+import { DEFAULT_PROJECT, isKnownProject } from "../shared/picklists.ts";
 import { normalizeAccessKey, NfeLookupError, type NfeLookupClient } from "./nfe.ts";
+import type { Sessions } from "./sessions.ts";
 
 const nfeBatchSchema = z.object({
   code: z.string(),
@@ -39,12 +40,33 @@ const printSchema = z.object({
   idempotencyKey: z.string(),
 });
 
+export const PROJECT_COOKIE = "project";
+
+/** The board a request belongs to, from its cookie. Unknown values fall back. */
+export function projectFrom(req: Request): string {
+  const header = req.headers.cookie;
+  if (!header) return DEFAULT_PROJECT;
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    if (part.slice(0, eq).trim() !== PROJECT_COOKIE) continue;
+    let value = "";
+    try {
+      value = decodeURIComponent(part.slice(eq + 1).trim());
+    } catch {
+      value = "";
+    }
+    return isKnownProject(value) ? value : DEFAULT_PROJECT;
+  }
+  return DEFAULT_PROJECT;
+}
+
 export interface AppOptions {
   enableTestRoutes?: boolean;
   nfeClient?: NfeLookupClient;
 }
 
-export function createApp(store: Store, options: AppOptions = {}): express.Express {
+export function createApp(sessions: Sessions, options: AppOptions = {}): express.Express {
   const app = express();
   app.use(express.json());
 
@@ -68,17 +90,19 @@ export function createApp(store: Store, options: AppOptions = {}): express.Expre
 
   if (options.enableTestRoutes) {
     app.post("/api/test/reset", (_req, res) => {
-      store.reset();
+      sessions.reset();
       res.json({ ok: true });
     });
   }
 
-  app.get("/api/board", (_req, res) => {
-    res.json(store.board());
+  app.get("/api/board", (req, res) => {
+    res.json(sessions.forProject(projectFrom(req)).board());
   });
 
   app.post("/api/groups", (req, res) => {
-    const input = createGroupSchema.parse(req.body);
+    const project = projectFrom(req);
+    const store = sessions.forProject(project);
+    const input = createGroupSchema.parse({ ...req.body, project });
     if (input.codes?.length) {
       const known = new Set((input.batches ?? []).map((batch) => batch.code));
       input.batches = [
@@ -90,45 +114,47 @@ export function createApp(store: Store, options: AppOptions = {}): express.Expre
   });
 
   app.delete("/api/groups/:id", (req, res) => {
+    const store = sessions.forProject(projectFrom(req));
     store.deleteGroup(req.params.id);
     res.json(store.board());
   });
 
   app.post("/api/move", (req, res) => {
     const { ticketId, sheetId, slot } = moveSchema.parse(req.body);
-    res.json(store.move(ticketId, sheetId, slot));
+    res.json(sessions.forProject(projectFrom(req)).move(ticketId, sheetId, slot));
   });
 
   app.post("/api/key-move", (req, res) => {
     const { ticketId, direction } = keyMoveSchema.parse(req.body);
-    res.json(store.keyMove(ticketId, direction));
+    res.json(sessions.forProject(projectFrom(req)).keyMove(ticketId, direction));
   });
 
-  app.post("/api/auto-arrange", (_req, res) => {
-    res.json(store.autoArrange());
+  app.post("/api/auto-arrange", (req, res) => {
+    res.json(sessions.forProject(projectFrom(req)).autoArrange());
   });
 
   app.post("/api/print", async (req, res) => {
     const { idempotencyKey } = printSchema.parse(req.body);
-    res.json(await store.print(idempotencyKey));
+    res.json(await sessions.forProject(projectFrom(req)).print(idempotencyKey));
   });
 
-  app.get("/api/batches", (_req, res) => {
-    res.json({ batches: store.listBatches() });
+  app.get("/api/batches", (req, res) => {
+    res.json({ batches: sessions.forProject(projectFrom(req)).listBatches() });
   });
 
   app.get("/api/batches/:id", (req, res) => {
-    res.json({ batch: store.getBatch(req.params.id) });
+    res.json({ batch: sessions.forProject(projectFrom(req)).getBatch(req.params.id) });
   });
 
   app.get("/api/batches/:id/pdf", (req, res) => {
-    const bytes = store.getPdf(req.params.id);
+    const bytes = sessions.forProject(projectFrom(req)).getPdf(req.params.id);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${req.params.id}.pdf"`);
     res.send(Buffer.from(bytes));
   });
 
   app.delete("/api/batches/:id", (req, res) => {
+    const store = sessions.forProject(projectFrom(req));
     store.deleteBatch(req.params.id);
     res.json({ batches: store.listBatches() });
   });

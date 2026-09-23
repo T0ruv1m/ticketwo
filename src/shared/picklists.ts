@@ -45,3 +45,10 @@ export const MUNICIPIOS: readonly PickOption[] = [
   { id: "32", name: "ANTÔNIO CARLOS - FARMÁCIA" },
   { id: "33", name: "ANTÔNIO CARLOS - HOSPITAL WAGNER" },
 ];
+
+export const DEFAULT_PROJECT = PROJETOS[0]!.name;
+
+/** Only the known projects get a board; anything else falls back to the default. */
+export function isKnownProject(project: string): boolean {
+  return PROJETOS.some((option) => option.name === project);
+}

@@ -1,7 +1,7 @@
 import type { Batch, Group, Sheet, Ticket } from "../domain/types.ts";
 import type { BoardView, BoardSheetView } from "../domain/store.ts";
 import { previewBlock } from "../domain/board.ts";
-import { MUNICIPIOS, PROJETOS } from "./picklists.ts";
+import { MUNICIPIOS, PROJETOS, DEFAULT_PROJECT } from "../shared/picklists.ts";
 import { makeIdempotencyKey } from "./keys.ts";
 
 const boardEl = document.getElementById("board") as HTMLDivElement;
@@ -53,6 +53,43 @@ function setStatus(message: string, error = false): void {
   statusEl.textContent = message;
   statusEl.classList.toggle("error", error);
 }
+
+// ---- project (one board per project) -------------------------------------
+
+const PROJECT_COOKIE = "project";
+const projectSelect = document.getElementById("project-select") as HTMLSelectElement;
+
+function readProjectCookie(): string | null {
+  const match = document.cookie.match(/(?:^|;\s*)project=([^;]*)/);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1] ?? "");
+  } catch {
+    return null;
+  }
+}
+
+function writeProjectCookie(project: string): void {
+  document.cookie = `${PROJECT_COOKIE}=${encodeURIComponent(project)}; path=/; max-age=31536000; samesite=lax`;
+}
+
+let project = readProjectCookie() ?? DEFAULT_PROJECT;
+if (!PROJETOS.some((option) => option.name === project)) project = DEFAULT_PROJECT;
+writeProjectCookie(project);
+projectSelect.innerHTML = PROJETOS.map(
+  (option) => `<option value="${esc(option.name)}">${esc(option.name)}</option>`,
+).join("");
+projectSelect.value = project;
+
+projectSelect.addEventListener("change", async () => {
+  project = projectSelect.value;
+  writeProjectCookie(project);
+  selected = null;
+  activeSheetId = null;
+  pendingBatches = [];
+  printKey = null;
+  await load();
+});
 
 const FRIENDLY: Record<string, string> = {
   "out-of-bounds": "Este bloco não cabe nessa posição.",
@@ -468,7 +505,6 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(form);
   const body: Record<string, unknown> = {
-    project: String(data.get("project") ?? ""),
     destination: String(data.get("destination") ?? ""),
     totalVolumes: Number(data.get("totalVolumes")),
   };
@@ -644,11 +680,6 @@ function setupCombo(
   });
 }
 
-setupCombo(
-  document.getElementById("project-input") as HTMLInputElement,
-  document.getElementById("project-list") as HTMLUListElement,
-  PROJETOS,
-);
 setupCombo(
   document.getElementById("municipio-input") as HTMLInputElement,
   document.getElementById("municipio-list") as HTMLUListElement,

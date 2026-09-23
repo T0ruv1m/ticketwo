@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 import { Store } from "../src/domain/store.ts";
 import { createApp } from "../src/server/app.ts";
 import { NfeLookupError, type NfeLookupClient, type NfeLookupResult } from "../src/server/nfe.ts";
+import { Sessions } from "../src/server/sessions.ts";
 import { FakeComposer } from "./helpers.ts";
 
 const SAMPLE: NfeLookupResult = {
@@ -33,7 +34,7 @@ describe("GET /api/nfe/:key", () => {
   it("proxies a lookup with a normalized key", async () => {
     const lookup = vi.fn(async () => SAMPLE);
     const store = new Store({ composer: new FakeComposer() });
-    const app = createApp(store, { nfeClient: { lookup } });
+    const app = createApp(new Sessions(() => store), { nfeClient: { lookup } });
     const base = await listen(app);
     const res = await fetch(`${base}/api/nfe/3124-0100.874929000140550010005216041964324179`);
     expect(res.status).toBe(200);
@@ -44,7 +45,7 @@ describe("GET /api/nfe/:key", () => {
   it("rejects a key that is not 44 digits", async () => {
     const lookup = vi.fn(async () => SAMPLE);
     const store = new Store({ composer: new FakeComposer() });
-    const app = createApp(store, { nfeClient: { lookup } });
+    const app = createApp(new Sessions(() => store), { nfeClient: { lookup } });
     const base = await listen(app);
     const res = await fetch(`${base}/api/nfe/1234`);
     expect(res.status).toBe(400);
@@ -58,7 +59,7 @@ describe("GET /api/nfe/:key", () => {
       throw new NfeLookupError(404, "nfe-not-found", "no XML for key");
     });
     const store = new Store({ composer: new FakeComposer() });
-    const app = createApp(store, { nfeClient: { lookup } });
+    const app = createApp(new Sessions(() => store), { nfeClient: { lookup } });
     const base = await listen(app);
     const res = await fetch(`${base}/api/nfe/${SAMPLE.accessKey}`);
     expect(res.status).toBe(404);
@@ -69,7 +70,7 @@ describe("GET /api/nfe/:key", () => {
 
   it("answers 503 when no nfe client is configured", async () => {
     const store = new Store({ composer: new FakeComposer() });
-    const app = createApp(store);
+    const app = createApp(new Sessions(() => store));
     const base = await listen(app);
     const res = await fetch(`${base}/api/nfe/${SAMPLE.accessKey}`);
     expect(res.status).toBe(503);
@@ -98,7 +99,7 @@ describe("GET /api/nfe/:key", () => {
 describe("POST /api/groups without a lookup", () => {
   it("accepts a manually typed nfe number", async () => {
     const store = new Store({ composer: new FakeComposer() });
-    const base = await listen(createApp(store));
+    const base = await listen(createApp(new Sessions(() => store)));
     const res = await fetch(`${base}/api/groups`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -111,7 +112,7 @@ describe("POST /api/groups without a lookup", () => {
 
   it("accepts manually typed batch codes", async () => {
     const store = new Store({ composer: new FakeComposer() });
-    const base = await listen(createApp(store));
+    const base = await listen(createApp(new Sessions(() => store)));
     const res = await fetch(`${base}/api/groups`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -129,7 +130,7 @@ describe("POST /api/groups without a lookup", () => {
 
   it("merges manual codes with lookup batches and de-duplicates", async () => {
     const store = new Store({ composer: new FakeComposer() });
-    const base = await listen(createApp(store));
+    const base = await listen(createApp(new Sessions(() => store)));
     await fetch(`${base}/api/groups`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

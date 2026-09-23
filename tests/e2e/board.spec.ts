@@ -154,8 +154,7 @@ test("duplicate queued add shows the existing tickets instead of duplicating", a
   await addGroup(request, "G1", 3);
   await page.reload();
 
-  await page.getByLabel("Projeto").fill("ACME");
-  await page.getByLabel("Município").fill("LAGOA DOURADA");
+  await page.getByLabel("Município").fill("Berlin");
   await page.getByLabel("Volumes").fill("3");
   await page.getByLabel("ID do grupo (opcional)").fill("G1");
   await page.getByRole("button", { name: "Adicionar à fila" }).click();
@@ -165,26 +164,17 @@ test("duplicate queued add shows the existing tickets instead of duplicating", a
   await expect(page.locator('[data-testid="ticket"]')).toHaveCount(3);
 });
 
-test("adversarial: whitespace project is rejected", async ({ page }) => {
-  await page.getByLabel("Projeto").fill("   ");
-  await page.getByLabel("Volumes").fill("3");
-  await page.getByRole("button", { name: "Adicionar à fila" }).click();
-  await expect(page.locator("#status")).toContainText("project must be a non-empty string");
-  await expect(page.locator('[data-testid="ticket"]')).toHaveCount(0);
-});
-
-test("adversarial: a project name is rendered as text, never executed", async ({ page, request }) => {
+test("adversarial: a destination is rendered as text, never executed", async ({ page, request }) => {
   await request.post("/api/groups", {
     data: {
       id: "GX",
-      project: '<img src=x onerror="window.__xss=1">',
-      destination: "Berlin",
+      destination: '<img src=x onerror="window.__xss=1">',
       totalVolumes: 2,
     },
   });
   await page.reload();
   expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
-  await expect(page.locator('[data-testid="ticket"]').first().locator(".project")).toContainText("<img");
+  await expect(page.locator('[data-testid="ticket"]').first().locator(".meta")).toContainText("<img");
   await expect(page.locator('[data-testid="ticket"] img')).toHaveCount(0);
 });
 
@@ -229,7 +219,6 @@ test("an nfe access-key lookup fills the form and stamps tickets with the NF-e n
   await expect(page.getByLabel("Número da NF-e")).toHaveValue("521604");
   await expect(page.getByLabel("ID do grupo (opcional)")).toHaveValue(KEY);
 
-  await page.getByLabel("Projeto").fill("ACME");
   await page.getByLabel("Município").fill("LAGOA DOURADA");
   await page.getByRole("button", { name: "Adicionar à fila" }).click();
 

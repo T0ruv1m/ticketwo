@@ -58,6 +58,21 @@ h2 {
   gap: 8px;
 }
 
+.project-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.project-picker select {
+  background: var(--panel-2);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
 .lookup {
   display: flex;
   flex-direction: column;

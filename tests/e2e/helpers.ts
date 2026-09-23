@@ -13,11 +13,10 @@ export async function addGroup(
   request: APIRequestContext,
   id: string,
   totalVolumes: number,
-  project = "ACME",
   destination = "Berlin",
 ): Promise<void> {
   const response = await request.post("/api/groups", {
-    data: { id, project, destination, totalVolumes },
+    data: { id, destination, totalVolumes },
   });
   expect(response.ok()).toBeTruthy();
 }

@@ -9,6 +9,10 @@
     <div id="app">
       <header>
         <h1>tickets</h1>
+        <div class="project-picker">
+          <label for="project-select">Projeto</label>
+          <select id="project-select" aria-label="Projeto"></select>
+        </div>
         <div class="actions">
           <button id="auto-arrange" type="button">Auto-organizar</button>
           <button id="print" type="button" class="primary">Imprimir lote</button>
@@ -36,22 +40,6 @@
         <aside>
           <form id="add-group" autocomplete="off">
             <h2>Nova remessa</h2>
-            <div class="combo-field">
-              <label for="project-input">Projeto</label>
-              <div class="combo">
-                <input
-                  id="project-input"
-                  name="project"
-                  required
-                  autocomplete="off"
-                  role="combobox"
-                  aria-expanded="false"
-                  aria-autocomplete="list"
-                  aria-controls="project-list"
-                />
-                <ul id="project-list" class="combo-list" role="listbox" hidden></ul>
-              </div>
-            </div>
             <div class="combo-field">
               <label for="municipio-input">Município</label>
               <div class="combo">
