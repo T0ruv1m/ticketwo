@@ -17,6 +17,8 @@ const OUTLINE = rgb(0.8, 0.8, 0.83);
 const ACCENT = rgb(0.1, 0.35, 0.75);
 
 const PAD = 6;
+/** Full-page barcodes are capped so they can never grow into the lotes/footer. */
+const MAX_BARCODE_HEIGHT = 60;
 
 export class PdfLibComposer implements Composer {
   async compose(pages: readonly PageSpec[], profile: PrintProfile): Promise<Uint8Array> {
@@ -89,7 +91,7 @@ function drawGridPage(
       });
       return;
     }
-    drawLogo(page, logo, rect, 0.75, 0.1);
+    drawLogo(page, logo, rect, 0.75, 0.12);
     drawTicketCard(page, rect, ticket, regular, bold, barcodes);
   });
 }
@@ -260,9 +262,11 @@ function drawFullPage(
     borderWidth: 2,
   });
 
-  drawLogo(page, logo, rect, 0.8, 0.08);
+  drawLogo(page, logo, rect, 0.8, 0.13);
 
   const centerX = rect.x + rect.width / 2;
+  const maxW = rect.width - PAD * 2;
+
   const total = String(ticket.totalVolumes);
   const bigSize = 200;
   const totalWidth = bold.widthOfTextAtSize(total, bigSize);
@@ -284,51 +288,46 @@ function drawFullPage(
     color: MUTED,
   });
 
-  // Same identity rule as the grid card: NF-e number and lote codes instead of
-  // the 44-digit access key. Plain groups fall back to the group id.
-  const lines = [ticket.project, ticket.destination || "—"];
-  if (lines.length === 2 && ticket.batchCodes.length === 0) lines.push(ticket.groupId);
-  let y = rect.y + rect.height * 0.16;
-  for (const [i, line] of lines.entries()) {
-    // Município name is emphasized relative to the other identity lines.
-    const font = i === 0 ? bold : regular;
-    const size = i === 0 ? 25 : 22;
-    const width = font.widthOfTextAtSize(line, size);
-    page.drawText(fit(line, font, size, rect.width - PAD * 2), {
-      x: centerX - width / 2,
-      y,
-      size,
-      font,
-      color: i === 0 ? INK : i === 1 ? INK : MUTED,
-    });
-    y -= size + 10;
+  // Bottom stack, anchored to the page edge and built upward: access-key text,
+  // barcode (height-capped), then the consórcio footer above it.
+  const keySize = 9;
+  const keyY = rect.y + PAD;
+  drawCentered(page, ticket.groupId, regular, keySize, maxW, centerX, keyY, MUTED);
+
+  const barcode = barcodes.get(ticket.groupId);
+  const barcodeBottom = keyY + keySize + 6;
+  let barcodeTop = barcodeBottom;
+  if (barcode) {
+    const aspect = barcode.width / barcode.height;
+    const width = Math.min(rect.width * 0.8, MAX_BARCODE_HEIGHT * aspect);
+    const height = width / aspect;
+    page.drawImage(barcode, { x: centerX - width / 2, y: barcodeBottom, width, height });
+    barcodeTop = barcodeBottom + height;
   }
 
-  if (ticket.nfeNumber) {
-    const nfeText = `NF-e ${ticket.nfeNumber}`;
-    const nfeWidth = regular.widthOfTextAtSize(nfeText, 22);
-    page.drawText(fit(nfeText, regular, 22, rect.width - PAD * 2), {
-      x: centerX - nfeWidth / 2,
-      y,
-      size: 22,
-      font: regular,
-      color: MUTED,
-    });
-    y -= 32;
+  const footerSize = 7;
+  const footerY = barcodeTop + 10;
+  drawCentered(page, FOOTER, regular, footerSize, maxW, centerX, footerY, MUTED);
+
+  // Batch codes sit above the footer; they wrap, and shrink when there are many.
+  let loteSize = 18;
+  let rows = layoutBatchRows(ticket.batchCodes, regular, loteSize, maxW);
+  if (rows.length > 3) {
+    loteSize = 12;
+    rows = layoutBatchRows(ticket.batchCodes, regular, loteSize, maxW);
   }
-  if (ticket.batchCodes.length > 0) {
-    // Inline layout: every code gets a checkbox beside it, never stacked.
-    const box = 14;
-    const textboxGap = 7;
-    const gap = 16;
-    const entries = ticket.batchCodes.map((code) => {
-      const text = code;
-      return { text, textW: regular.widthOfTextAtSize(text, 18) };
-    });
-    const totalRow =
-      entries.reduce((sum, e) => sum + e.textW + textboxGap + box, 0) + gap * (entries.length - 1);
-    let x = centerX - totalRow / 2;
-    for (const entry of entries) {
+  const box = Math.round(loteSize * 0.78);
+  const textboxGap = Math.round(loteSize * 0.39);
+  const gap = Math.round(loteSize * 0.89);
+  const rowStep = loteSize + 8;
+  const lotesBottom = footerY + footerSize + 18;
+  const lotesTop = lotesBottom + Math.max(0, rows.length - 1) * rowStep;
+  rows.forEach((row, index) => {
+    const y = lotesTop - index * rowStep;
+    const rowWidth =
+      row.reduce((sum, entry) => sum + entry.textW + textboxGap + box, 0) + gap * (row.length - 1);
+    let x = centerX - rowWidth / 2;
+    for (const entry of row) {
       page.drawRectangle({
         x,
         y: y + 1,
@@ -337,14 +336,89 @@ function drawFullPage(
         borderColor: OUTLINE,
         borderWidth: 1,
       });
-      page.drawText(entry.text, { x: x + box + textboxGap, y, size: 18, font: regular, color: MUTED });
+      page.drawText(entry.text, {
+        x: x + box + textboxGap,
+        y,
+        size: entry.size,
+        font: regular,
+        color: MUTED,
+      });
       x += entry.textW + textboxGap + box + gap;
     }
-    y -= 26;
-  }
+  });
 
-  drawBarcode(page, barcodes.get(ticket.groupId)!, rect, 0.8, 22);
-  drawFooter(page, rect, regular, 7, MUTED);
+  // Identity block, flowing up from the batch codes toward the volume count.
+  let y = lotesTop + loteSize + 22;
+  if (ticket.nfeNumber) {
+    drawCentered(page, `NF-e ${ticket.nfeNumber}`, regular, 22, maxW, centerX, y, MUTED);
+    y += 34;
+  }
+  drawCentered(page, ticket.destination || "—", regular, 22, maxW, centerX, y, INK);
+  y += 34;
+  drawCentered(page, ticket.project, bold, 25, maxW, centerX, y, INK);
+}
+
+function drawCentered(
+  page: PDFPage,
+  text: string,
+  font: PDFFont,
+  size: number,
+  maxWidth: number,
+  centerX: number,
+  y: number,
+  color: Color,
+): void {
+  const shown = fit(text, font, size, maxWidth);
+  const width = font.widthOfTextAtSize(shown, size);
+  page.drawText(shown, { x: centerX - width / 2, y, size, font, color });
+}
+
+interface BatchEntry {
+  text: string;
+  textW: number;
+  size: number;
+}
+
+/**
+ * Lay batch codes into rows that fit `maxWidth`, keeping the checkbox + text
+ * together. A single code that is too wide shrinks first, then truncates.
+ */
+function layoutBatchRows(
+  codes: readonly string[],
+  font: PDFFont,
+  size: number,
+  maxWidth: number,
+): BatchEntry[][] {
+  const box = Math.round(size * 0.78);
+  const textboxGap = Math.round(size * 0.39);
+  const gap = Math.round(size * 0.89);
+  const rows: BatchEntry[][] = [];
+  let row: BatchEntry[] = [];
+  let rowWidth = 0;
+
+  for (const code of codes) {
+    let entrySize = size;
+    let text = code;
+    let textW = font.widthOfTextAtSize(text, entrySize);
+    while (entrySize > 10 && textW + textboxGap + box > maxWidth) {
+      entrySize -= 1;
+      textW = font.widthOfTextAtSize(text, entrySize);
+    }
+    if (textW + textboxGap + box > maxWidth) {
+      text = fit(text, font, entrySize, maxWidth - textboxGap - box);
+      textW = font.widthOfTextAtSize(text, entrySize);
+    }
+    const itemW = textW + textboxGap + box;
+    if (row.length > 0 && rowWidth + gap + itemW > maxWidth) {
+      rows.push(row);
+      row = [];
+      rowWidth = 0;
+    }
+    rowWidth += (row.length > 0 ? gap : 0) + itemW;
+    row.push({ text, textW, size: entrySize });
+  }
+  if (row.length > 0) rows.push(row);
+  return rows;
 }
 
 function fit(text: string, font: PDFFont, size: number, maxWidth: number): string {
