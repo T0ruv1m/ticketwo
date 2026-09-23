@@ -8,7 +8,10 @@ the whole batch as a deterministic, server-composed PDF.
 - **TypeScript everywhere.** One language for domain, server, and UI.
 - **Node + Express** for the API and to serve the built UI.
 - **`pdf-lib`** behind a one-method `Composer` interface. Pure JS, programmatic,
-  reproducible output, no browser involved.
+  reproducible output, no browser involved. `bwip-js` generates one Code 128
+  barcode per access key (embedded as a cached PNG), and the CISALV logo from
+  `imgs/gray.png` is drawn as a low-opacity watermark — both encoded inline
+  (`src/pdf/logo.ts`), so the PDF stays byte-deterministic.
 - **Vanilla TS + Vite** for the board. The board is mostly direct DOM work
   (pointer-based drag, keyboard focus); a framework would add weight without
   changing the hard parts.
@@ -25,14 +28,30 @@ npm run dev          # API on :8787, Vite dev server on :5173 (proxies /api)
 ## Test
 
 ```bash
-npm test             # 45 unit/integration tests (domain, moves, print, PDF, keys)
+npm test             # 83 unit/integration tests (domain, moves, print, PDF, keys)
 npm run typecheck
-npm run test:e2e     # 22 Playwright tests
+npm run test:e2e     # Playwright tests, run separately
 
 # watch it run in a real browser (WSLg: appears on the Windows desktop)
 bash scripts/run-e2e.sh --headed
 bash scripts/run-e2e.sh --headed tests/e2e/board.spec.ts:28
 ```
+
+Notes for working on the tests in this environment:
+
+- **Only `*​*.test.ts` files are unit tests.** Vitest includes
+  `tests/**/*.test.ts` and never picks up the Playwright specs in
+  `tests/e2e/`, so a plain `npm test` stays fast and browser-free.
+- **e2e is only ever run explicitly** via `test:e2e` (`scripts/run-e2e.sh`);
+  it is not part of the vitest unit suite.
+- **Lighter unit runs on an overloaded machine:** the vitest transform step
+  compiles all files in parallel and can saturate a weak host. Cap it with
+  `npx vitest run --no-file-parallelism --maxConcurrency 1` — the whole unit
+  suite then finishes in well under a minute of wall-clock time.
+- **Playwright is already capped** (`workers: 1`, `fullyParallel: false` in
+  `playwright.config.ts`); if the e2e run still strains the machine, trim
+  `trace: "retain-on-failure"` or the `webServer` build step first.
+
 
 `test:e2e` runs `scripts/run-e2e.sh`. On a machine with Playwright's system
 libraries installed, plain `playwright test` works too. On a bare host where
@@ -68,6 +87,11 @@ print layout library is hidden behind `Composer`, so it can be swapped or faked
 - **Print contract** — `src/domain/store.ts` `print()` plus `src/pdf/`. Render is
   bounded by a timeout, commit is all-or-nothing, and a client idempotency key
   records at most one batch.
+- **Ticket visual layout** — `src/pdf/pdf-lib-composer.ts`. Every card and full
+  page carries: the CISALV watermark, the volume count with the project right
+  of it, the município name emphasized, the NF-e number at município size, one
+  checkbox left of each batch code (all inline, never stacked), the access key
+  as a Code 128 barcode, and the all-caps consárcio footer.
 - **Audit** — batches are immutable snapshots; only whole-batch deletion exists.
 
 ## Decisions worth calling out
