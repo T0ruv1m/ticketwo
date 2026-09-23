@@ -65,7 +65,7 @@ describe("Print determinism", () => {
     const result = await store.print("key");
     if (!result.printed) throw new Error("expected print");
     const text = extractPdfText(store.getPdf(result.batch.id));
-    expect(text).toContain("TOTAL VOLUMES");
+    expect(text).toContain("TOTAL DE VOLUMES");
     expect(text).toContain("G1");
     expect(text).toContain("12");
   });
@@ -76,7 +76,43 @@ describe("Print determinism", () => {
     const result = await store.print("key");
     if (!result.printed) throw new Error("expected print");
     const text = extractPdfText(store.getPdf(result.batch.id));
-    expect(text).toContain("1 of 3");
-    expect(text).toContain("3 of 3");
+    expect(text).toContain("1 de 3");
+    expect(text).toContain("3 de 3");
+  });
+
+  it("prints NF-e number and lote codes instead of the access key", async () => {
+    const store = realStore();
+    store.addGroup({
+      id: "31240100874929000140550010005216041964324179",
+      project: "ACME",
+      destination: "Berlin",
+      totalVolumes: 3,
+      nfeNumber: "521604",
+      batches: [{ code: "B23L0947", expiry: "2025-06-30", quantity: 20 }],
+    });
+    const result = await store.print("key");
+    if (!result.printed) throw new Error("expected print");
+    const text = extractPdfText(store.getPdf(result.batch.id));
+    expect(text).toContain("NF-e 521604");
+    expect(text).toContain("B23L0947");
+    expect(text).not.toContain("31240100874929000140550010005216041964324179");
+  });
+
+  it("prints the NF-e number on grid and full-page tickets", async () => {
+    const store = realStore();
+    store.addGroup({ id: "G1", project: "ACME", destination: "Berlin", totalVolumes: 3, nfeNumber: "521604" });
+    store.addGroup({ id: "G2", project: "ACME", destination: "Berlin", totalVolumes: 12, nfeNumber: "521999" });    const result = await store.print("key");
+    if (!result.printed) throw new Error("expected print");
+    const text = extractPdfText(store.getPdf(result.batch.id));
+    expect(text).toContain("NF-e 521604");
+    expect(text).toContain("NF-e 521999");
+  });
+
+  it("omits the NF-e line when a group has no NF-e number", async () => {
+    const store = realStore();
+    addGroup(store, "G1", 3);
+    const result = await store.print("key");
+    if (!result.printed) throw new Error("expected print");
+    expect(extractPdfText(store.getPdf(result.batch.id))).not.toContain("NF-e");
   });
 });
