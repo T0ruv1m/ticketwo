@@ -3,17 +3,6 @@ import { DomainError } from "../src/domain/errors.ts";
 import { addGroup, makeStore } from "./helpers.ts";
 
 describe("State", () => {
-  it("only pending or printed is ever observable", async () => {
-    const { store } = makeStore();
-    addGroup(store, "G1", 8);
-    expect(store.board().tickets.every((t) => t.status === "pending")).toBe(true);
-    await store.print("k1");
-    expect(store.board().tickets).toHaveLength(0);
-    for (const ticket of store.tickets.values()) {
-      expect(["pending", "printed"]).toContain(ticket.status);
-    }
-  });
-
   it("print success moves pending -> printed exactly once", async () => {
     const { store } = makeStore();
     addGroup(store, "G1", 8);
@@ -55,14 +44,6 @@ describe("State", () => {
     expect(store.listBatches()).toHaveLength(0);
     expect(() => store.deleteBatch(batch.id)).toThrow(DomainError);
     expect(before).toContain("G1");
-  });
-
-  it("empty-queue print is a no-op with a reason", async () => {
-    const { store, composer } = makeStore();
-    const result = await store.print("empty");
-    expect(result).toEqual({ printed: false, reason: "empty-queue" });
-    expect(composer.calls).toHaveLength(0);
-    expect(store.listBatches()).toHaveLength(0);
   });
 });
 

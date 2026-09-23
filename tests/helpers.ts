@@ -150,20 +150,6 @@ export function addGroup(
   store.addGroup({ id, project, destination, totalVolumes });
 }
 
-export function occupiedGroupRuns(board: ReturnType<Store["board"]>): string[][] {
-  return board.sheets.map((sheet) => {
-    if (sheet.kind === "full") {
-      return sheet.ticket ? [sheet.ticket.groupId] : [];
-    }
-    const runs: string[] = [];
-    for (const ticket of sheet.slots ?? []) {
-      if (!ticket) continue;
-      if (runs[runs.length - 1] !== ticket.groupId) runs.push(ticket.groupId);
-    }
-    return runs;
-  });
-}
-
 export function gridOccupancy(board: ReturnType<Store["board"]>): (string | null)[] {
   const sheet = board.sheets[0];
   if (!sheet || sheet.kind !== "grid") return [];

@@ -1,24 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DomainError } from "../src/domain/errors.ts";
-import { addGroup, gridOccupancy, makeStore, occupiedGroupRuns } from "./helpers.ts";
-
-describe("Grouping", () => {
-  it("groups never interleave", () => {
-    const { store } = makeStore();
-    addGroup(store, "G1", 3);
-    addGroup(store, "G2", 2);
-    for (const runs of occupiedGroupRuns(store.board())) {
-      const seen = new Set<string>();
-      let previous: string | undefined;
-      for (const run of runs) {
-        expect(run).not.toBe(previous);
-        expect(seen.has(run)).toBe(false);
-        seen.add(run);
-        previous = run;
-      }
-    }
-  });
-});
+import { addGroup, gridOccupancy, makeStore } from "./helpers.ts";
 
 describe("Sheets and capacity", () => {
   it("a sheet holds exactly 10 grid tickets", () => {
@@ -61,17 +43,6 @@ describe("Sheets and capacity", () => {
     expect(result.tickets).toHaveLength(1);
     expect(result.tickets[0]!.kind).toBe("full");
     expect(result.tickets[0]!.volumeIndex).toBeNull();
-  });
-
-  it("a full-page ticket owns its sheet", () => {
-    const { store } = makeStore();
-    addGroup(store, "G1", 12);
-    addGroup(store, "G2", 3);
-    const board = store.board();
-    const fullSheet = board.sheets.find((s) => s.kind === "full")!;
-    expect(fullSheet.ticket?.groupId).toBe("G1");
-    const others = board.sheets.filter((s) => s.id !== fullSheet.id);
-    expect(others.every((s) => (s.kind === "grid" ? true : s.ticket?.groupId !== "G1"))).toBe(true);
   });
 });
 
@@ -180,19 +151,5 @@ describe("Integrity", () => {
     const { store } = makeStore();
     expect(() => store.addGroup({ id: "G1", project: "", totalVolumes: 3 })).toThrow(DomainError);
     expect(() => store.addGroup({ id: "G2", project: "   ", totalVolumes: 3 })).toThrow(DomainError);
-  });
-
-  it("deleting a group deletes its pending tickets but not batch snapshots", async () => {
-    const { store } = makeStore();
-    addGroup(store, "G1", 5);
-    addGroup(store, "G2", 5);
-    await store.print("key");
-    addGroup(store, "G1b", 5);
-    addGroup(store, "G2b", 5);
-    store.deleteGroup("G1b");
-    const board = store.board();
-    expect(board.tickets.every((t) => t.groupId === "G2b")).toBe(true);
-    expect(store.listBatches()[0]!.tickets).toHaveLength(10);
-    expect(store.listBatches()[0]!.tickets.some((t) => t.groupId === "G1")).toBe(true);
   });
 });

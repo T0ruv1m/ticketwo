@@ -4,16 +4,7 @@ import { PdfLibComposer } from "../src/pdf/pdf-lib-composer.ts";
 import { extractPdfGeometry } from "./helpers.ts";
 
 const KEY = "31240100874929000140550010005216041964324179";
-const CODES = [
-  "25K1900",
-  "RB5X0001",
-  "B23L0947",
-  "B23L0948",
-  "B23L0949",
-  "B23L0950",
-  "B23L0951",
-  "B23L0952",
-];
+const CODES = ["25K1900", "RB5X0001", "B23L0947", "B23L0948"];
 
 function fullPageStore(): Store {
   const store = new Store({
@@ -33,13 +24,12 @@ function fullPageStore(): Store {
 }
 
 /**
- * Geometry regression for the ghost-overlap bug: the lote codes and the
- * consórcio footer used to be drawn on top of the barcode. This reads the real
- * content stream and checks the vertical ordering, so it fails if the layout
- * ever regresses — no renderer or golden image needed.
+ * Geometry regression for the full-page layout: the footer must clear the
+ * barcode and the access key must sit below it. A full page is one ticket for a
+ * whole group, so it must not carry the per-volume lote checkboxes at all.
  */
 describe("Full-page layout", () => {
-  it("keeps the lotes and footer clear of the barcode, key below it", async () => {
+  it("keeps the footer clear of the barcode, key below it, and no lotes", async () => {
     const store = fullPageStore();
     const result = await store.print("key");
     if (!result.printed) throw new Error("expected print");
@@ -51,11 +41,8 @@ describe("Full-page layout", () => {
     const barcodeBottom = barcode!.y;
     const barcodeTop = barcode!.y + barcode!.height;
 
-    const loteYs = texts.filter((item) => CODES.includes(item.text)).map((item) => item.y);
-    expect(loteYs, "every lote code is rendered").toHaveLength(CODES.length);
-    for (const y of loteYs) {
-      expect(y, `lote at y=${y} overlaps the barcode`).toBeGreaterThanOrEqual(barcodeTop);
-    }
+    const loteTexts = texts.filter((item) => CODES.includes(item.text));
+    expect(loteTexts, "full page must not print lote codes").toHaveLength(0);
 
     const footer = texts.find((item) => item.text.includes("CONSÓRCIO"));
     expect(footer, "footer is rendered").toBeDefined();
