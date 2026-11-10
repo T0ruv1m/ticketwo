@@ -189,6 +189,8 @@ main {
 
 .sheet.full {
   display: flex;
+  padding: 0;
+  background: #fff;
 }
 
 .slot {
@@ -245,9 +247,10 @@ main {
   text-overflow: ellipsis;
 }
 
-.card.full-card .nfe {
-  font-size: 13px;
-}
+.card:not(.full-card) .index { font-size: 13px; font-weight: 700; }
+.card:not(.full-card) .nfe { font-size: 10px; font-weight: 700; }
+.card:not(.full-card) .project { font-size: 12px; font-weight: 700; }
+.card:not(.full-card) .meta { font-size: 11px; font-weight: 700; }
 
 .card .project {
   font-weight: 600;
@@ -266,23 +269,18 @@ main {
 }
 
 .card.full-card {
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  text-align: center;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #000;
 }
 
-.card.full-card .big {
-  font-size: 72px;
-  font-weight: 800;
-  color: var(--accent);
-  line-height: 1;
-}
-
-.card.full-card .label {
-  font-size: 12px;
-  letter-spacing: 2px;
-  color: #5a5f6b;
+.cover-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: #000;
 }
 
 .ghost {

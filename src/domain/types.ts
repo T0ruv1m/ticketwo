@@ -1,19 +1,12 @@
 export type TicketKind = "grid" | "full";
 export type TicketStatus = "pending" | "printed";
 
-export interface NfeBatch {
-  code: string;
-  expiry: string;
-  quantity: number;
-}
-
 export interface Group {
   id: string;
   project: string;
   destination: string;
   totalVolumes: number;
   nfeNumber: string | null;
-  batches: NfeBatch[];
   createdAt: string;
 }
 
@@ -26,7 +19,6 @@ export interface Ticket {
   volumeIndex: number | null;
   totalVolumes: number;
   nfeNumber: string | null;
-  batchCodes: string[];
   status: TicketStatus;
 }
 
@@ -53,7 +45,6 @@ export interface BatchSnapshot {
   volumeIndex: number | null;
   totalVolumes: number;
   nfeNumber: string | null;
-  batchCodes: string[];
 }
 
 export interface Batch {

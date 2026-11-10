@@ -33,8 +33,9 @@ describe("HttpNfeLookupClient", () => {
     expect(impl).toHaveBeenCalledWith(
       `http://nfe-lookup:5000/nfe/${SAMPLE.accessKey}`,
     );
-    expect(result.nfeNumber).toBe("521604");
-    expect(result.volumes).toBe(1);
+    expect(result).toEqual({
+      accessKey: SAMPLE.accessKey, nfeNumber: "521604", volumes: 1, source: SAMPLE.source,
+    });
   });
 
   it("maps upstream status codes to stable error codes", async () => {

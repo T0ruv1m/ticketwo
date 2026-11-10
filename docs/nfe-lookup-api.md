@@ -55,24 +55,25 @@ curl http://localhost:5000/nfe/31240100874929000140550010005216041964324179
 
 The tickets2 server proxies lookups: `GET /api/nfe/{key}` (key digits are
 normalized, 44 required). The upstream base URL comes from `NFE_LOOKUP_URL`
-(default `http://localhost:5000`; set it empty to disable lookups — the
+(default `http://localhost:8000`; set it empty to disable lookups — the
 endpoint then answers `503 nfe-disabled`).
 
 Feed `POST /api/groups` (see `src/server/app.ts`) with:
 
-- `id` ← `accessKey` (globally unique — the 44-digit key)
+- `id` ← independent shipment ID (reused only when retrying the same add)
 - `totalVolumes` ← `volumes`
 
 `project` and `destination` are set by the caller; the lookup service
-does not provide them. `batches` is not consumed today — it is carried
-for the future ticket label.
+does not provide them. NF-e lot data (`batches`) is ignored and is not stored
+on shipments or tickets. The access key is used only to look up the NF-e; it
+does not prevent adding another shipment with the same invoice.
 
 Typical flow:
 
 ```ts
 const nfe = await fetch(`http://nfe-lookup:5000/nfe/${key}`).then(r => r.json());
 await api<{ duplicate: boolean }>("/api/groups", {
-  id: nfe.accessKey,
+  id: crypto.randomUUID(),
   project: "...",
   totalVolumes: nfe.volumes ?? 0,
 });

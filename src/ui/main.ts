@@ -3,6 +3,8 @@ import type { BoardView, BoardSheetView } from "../domain/store.ts";
 import { previewBlock } from "../domain/board.ts";
 import { MUNICIPIOS, PROJETOS, DEFAULT_PROJECT } from "../shared/picklists.ts";
 import { makeIdempotencyKey } from "./keys.ts";
+import { COVER, coverLines } from "../pdf/cover-layout.ts";
+import { COVER_LOGO_JPG_BASE64 } from "../pdf/cover-logo.ts";
 
 const boardEl = document.getElementById("board") as HTMLDivElement;
 const tabsEl = document.getElementById("sheet-tabs") as HTMLDivElement;
@@ -86,7 +88,7 @@ projectSelect.addEventListener("change", async () => {
   writeProjectCookie(project);
   selected = null;
   activeSheetId = null;
-  pendingBatches = [];
+  lastLookedUpKey = "";
   printKey = null;
   await load();
 });
@@ -105,17 +107,12 @@ function friendly(err: unknown): string {
 }
 
 function cardHtml(ticket: Ticket): string {
-  // The 44-digit access key never shows on the card; the NF-e number and lote
-  // codes identify the shipment. Plain groups fall back to the group id.
-  const labeled = Boolean(ticket.nfeNumber) || ticket.batchCodes.length > 0;
+  const labeled = Boolean(ticket.nfeNumber);
   const label = `${ticket.project}, ${ticket.destination || "sem município"}, ${
-    labeled ? (ticket.nfeNumber ? `NF-e ${ticket.nfeNumber}` : "") + (ticket.batchCodes.length ? ` lote ${ticket.batchCodes.join(", ")}` : "") : ticket.groupId
+    ticket.nfeNumber ? `NF-e ${ticket.nfeNumber}` : ticket.groupId
   }, ${ticket.kind === "full" ? `${ticket.totalVolumes} volumes` : `${ticket.volumeIndex} de ${ticket.totalVolumes}`}`;
   const nfe = ticket.nfeNumber
     ? `<div class="nfe" data-testid="nfe-number">NF-e ${esc(ticket.nfeNumber)}</div>`
-    : "";
-  const lote = ticket.batchCodes.length
-    ? `<div class="nfe" data-testid="lote-codes">Lote ${esc(ticket.batchCodes.join(", "))}</div>`
     : "";
   const meta = labeled
     ? esc(ticket.destination || "—")
@@ -124,12 +121,17 @@ function cardHtml(ticket: Ticket): string {
     return `<div class="card full-card" data-testid="ticket" data-ticket-id="${esc(ticket.id)}" data-group-id="${esc(
       ticket.groupId,
     )}" data-kind="full" tabindex="0" role="button" aria-label="${esc(label)}">
-      ${nfe}
-      ${lote}
-      <div class="big">${esc(ticket.totalVolumes)}</div>
-      <div class="label">TOTAL DE VOLUMES</div>
-      <div class="project">${esc(ticket.project)}</div>
-      <div class="meta">${meta}</div>
+      <svg class="cover-preview" viewBox="0 0 ${COVER.width} ${COVER.height}" aria-hidden="true">
+        ${COVER.frame.map((box) => `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" />`).join("")}
+        <image href="data:image/jpeg;base64,${COVER_LOGO_JPG_BASE64}" x="${COVER.logo.x}" y="${COVER.logo.y}" width="${COVER.logo.width}" height="${COVER.logo.height}" />
+        ${coverLines(ticket).map((line, index) => {
+          const context = document.createElement("canvas").getContext("2d");
+          if (context) context.font = `bold ${COVER.fontSize}px Arial`;
+          const width = context?.measureText(line).width ?? COVER.maxTextWidth;
+          const size = Math.min(COVER.fontSize, COVER.fontSize * COVER.maxTextWidth / width);
+          return `<text x="${COVER.width / 2}" y="${COVER.baselines[index]}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="${size}">${esc(line)}</text>`;
+        }).join("")}
+      </svg>
     </div>`;
   }
   return `<div class="card" data-testid="ticket" data-ticket-id="${esc(ticket.id)}" data-group-id="${esc(
@@ -139,7 +141,6 @@ function cardHtml(ticket: Ticket): string {
   )}">
     <div class="index">${esc(ticket.volumeIndex)} de ${esc(ticket.totalVolumes)}</div>
     ${nfe}
-    ${lote}
     <div class="project">${esc(ticket.project)}</div>
     <div class="meta">${meta}</div>
   </div>`;
@@ -444,13 +445,14 @@ interface NfeLookup {
   accessKey: string;
   nfeNumber: string;
   volumes: number | null;
-  batches: { code: string; expiry: string; quantity: number }[];
 }
 
 const accessKeyInput = form.elements.namedItem("accessKey") as HTMLInputElement;
 const nfeNumberInput = form.elements.namedItem("nfeNumber") as HTMLInputElement;
 const totalVolumesInput = form.elements.namedItem("totalVolumes") as HTMLInputElement;
-let pendingBatches: NfeLookup["batches"] = [];
+// Preserve a draft ID on retries; the NF-e key identifies the lookup only.
+let draftGroupId: string | null = null;
+let addingGroup = false;
 
 const ACCESS_KEY_LENGTH = 44;
 let lookupInFlight = false;
@@ -471,7 +473,6 @@ async function lookupNfe(): Promise<void> {
     accessKeyInput.value = nfe.accessKey;
     lastLookedUpKey = nfe.accessKey;
     nfeNumberInput.value = nfe.nfeNumber;
-    pendingBatches = nfe.batches ?? [];
     if (nfe.volumes !== null && nfe.volumes > 0) totalVolumesInput.value = String(nfe.volumes);
     setStatus(`NF-e ${nfe.nfeNumber} — ${nfe.volumes ?? "?"} volume(s). Revise e adicione à fila.`);
   } catch (err) {
@@ -503,31 +504,30 @@ accessKeyInput.addEventListener("keydown", (event) => {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (addingGroup) return;
   const data = new FormData(form);
   const body: Record<string, unknown> = {
+    id: draftGroupId ??= makeIdempotencyKey(),
     destination: String(data.get("destination") ?? ""),
     totalVolumes: Number(data.get("totalVolumes")),
   };
-  const id = String(data.get("id") ?? "").trim();
-  if (id) body.id = id;
   const nfeNumber = String(data.get("nfeNumber") ?? "").trim();
   if (nfeNumber) body.nfeNumber = nfeNumber;
-  const codes = String(data.get("batchCodes") ?? "")
-    .split(/[\s,;]+/)
-    .filter(Boolean);
-  if (codes.length > 0) body.codes = codes;
-  if (pendingBatches.length > 0) body.batches = pendingBatches;
-  pendingBatches = [];
-  const accessKey = String(data.get("accessKey") ?? "").replace(/\D/g, "");
-  if (accessKey.length === 44) body.id = accessKey;
+  addingGroup = true;
+  const addButton = form.querySelector<HTMLButtonElement>('[type="submit"]')!;
+  addButton.disabled = true;
   try {
     const result = await api<{ duplicate: boolean; tickets: Ticket[] }>("/api/groups", body);
     setStatus(result.duplicate ? `Já está na fila — exibindo os ${result.tickets.length} etiqueta(s) existentes.` : "");
     form.reset();
-    pendingBatches = [];
+    draftGroupId = null;
+    lastLookedUpKey = "";
     await load();
   } catch (err) {
     setStatus(friendly(err), true);
+  } finally {
+    addingGroup = false;
+    addButton.disabled = false;
   }
 });
 

@@ -1,5 +1,5 @@
 import { DomainError } from "./errors.ts";
-import type { Group, NfeBatch, Ticket } from "./types.ts";
+import type { Group, Ticket } from "./types.ts";
 
 export const MIN_VOLUMES = 1;
 export const MAX_VOLUMES = 100000;
@@ -11,7 +11,6 @@ export interface CreateGroupInput {
   destination?: string;
   totalVolumes: number;
   nfeNumber?: string | null;
-  batches?: NfeBatch[];
 }
 
 export function assertValidProject(project: unknown): asserts project is string {
@@ -48,7 +47,6 @@ export function buildGroup(input: CreateGroupInput, now: string): Group {
     destination: (input.destination ?? "").trim(),
     totalVolumes: input.totalVolumes,
     nfeNumber: input.nfeNumber?.trim() ? input.nfeNumber.trim() : null,
-    batches: input.batches ?? [],
     createdAt: now,
   };
 }
@@ -60,7 +58,6 @@ export function buildTickets(group: Group): Ticket[] {
     destination: group.destination,
     totalVolumes: group.totalVolumes,
     nfeNumber: group.nfeNumber,
-    batchCodes: group.batches.map((batch) => batch.code),
     status: "pending" as const,
   };
 

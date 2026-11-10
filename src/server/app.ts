@@ -8,21 +8,12 @@ import { DEFAULT_PROJECT, isKnownProject } from "../shared/picklists.ts";
 import { normalizeAccessKey, NfeLookupError, type NfeLookupClient } from "./nfe.ts";
 import type { Sessions } from "./sessions.ts";
 
-const nfeBatchSchema = z.object({
-  code: z.string(),
-  expiry: z.string(),
-  quantity: z.number(),
-});
-
 const createGroupSchema = z.object({
   id: z.string().optional(),
   project: z.string(),
   destination: z.string().optional(),
   totalVolumes: z.number(),
   nfeNumber: z.string().optional(),
-  batches: z.array(nfeBatchSchema).optional(),
-  // Manually typed batch codes; no lookup metadata exists for them.
-  codes: z.array(z.string()).optional(),
 });
 
 const moveSchema = z.object({
@@ -103,13 +94,6 @@ export function createApp(sessions: Sessions, options: AppOptions = {}): express
     const project = projectFrom(req);
     const store = sessions.forProject(project);
     const input = createGroupSchema.parse({ ...req.body, project });
-    if (input.codes?.length) {
-      const known = new Set((input.batches ?? []).map((batch) => batch.code));
-      input.batches = [
-        ...(input.batches ?? []),
-        ...input.codes.filter((code) => !known.has(code)).map((code) => ({ code, expiry: "", quantity: 0 })),
-      ];
-    }
     res.status(201).json(store.addGroup(input));
   });
 

@@ -8,10 +8,9 @@ the whole batch as a deterministic, server-composed PDF.
 - **TypeScript everywhere.** One language for domain, server, and UI.
 - **Node + Express** for the API and to serve the built UI.
 - **`pdf-lib`** behind a one-method `Composer` interface. Pure JS, programmatic,
-  reproducible output, no browser involved. `bwip-js` generates one Code 128
-  barcode per access key (embedded as a cached PNG), and the CISALV logo from
-  `imgs/gray.png` is drawn as a low-opacity watermark — both encoded inline
-  (`src/pdf/logo.ts`), so the PDF stays byte-deterministic.
+  reproducible output, no browser involved. The original CISALV header from
+  `imgs/cabecalho.png` is embedded inline (`src/pdf/logo.ts`), so the PDF stays
+  byte-deterministic.
 - **Vanilla TS + Vite** for the board. The board is mostly direct DOM work
   (pointer-based drag, keyboard focus); a framework would add weight without
   changing the hard parts.
@@ -87,11 +86,11 @@ print layout library is hidden behind `Composer`, so it can be swapped or faked
 - **Print contract** — `src/domain/store.ts` `print()` plus `src/pdf/`. Render is
   bounded by a timeout, commit is all-or-nothing, and a client idempotency key
   records at most one batch.
-- **Ticket visual layout** — `src/pdf/pdf-lib-composer.ts`. Every card and full
-  page carries: the CISALV watermark, the volume count with the project right
-  of it, the município name emphasized, the NF-e number at município size, one
-  checkbox left of each batch code (all inline, never stacked), the access key
-  as a Code 128 barcode, and the all-caps consárcio footer.
+- **Ticket visual layout** — `src/pdf/pdf-lib-composer.ts`. Grid labels follow
+  `GERADOR DE ETIQUETAS.html`: CISALV mark above a centered type title, bold
+  município, volume, and supplier NF lines, then a right-aligned project footer.
+  Lote codes appear on an extra line when present. Full-page group sheets keep
+  the large total in the same visual style.
 - **Audit** — batches are immutable snapshots; only whole-batch deletion exists.
 
 ## Decisions worth calling out
@@ -106,6 +105,9 @@ print layout library is hidden behind `Composer`, so it can be swapped or faked
   sheet; a move onto a grid sheet is rejected with `full-page-on-grid`.
 - **`totalVolumes` is fixed at creation** and incremental adds are capped by the
   duplicate check (same id + same attributes returns the existing tickets).
+- **NF-e lookup** uses the barcode only for consulting invoice details. Each new
+  UI add gets its own shipment ID, so the same invoice can be added again with
+  another city or volume count. NF-e lot data is not stored or printed.
 - **Position** counts a grid sheet as 10 slots and a full sheet as 1.
 
 ## Known gaps
@@ -114,3 +116,22 @@ print layout library is hidden behind `Composer`, so it can be swapped or faked
   landing range (accent highlight) and rejects impossible drops with no preview.
 - No persistence: the store is in-memory, so restarting the server clears state.
 - The PDF is kept in memory per batch to serve it later; there is no archive.
+
+## Single-file version
+
+Run `npm run build:standalone`, then open `dist/standalone/tickets.html` in
+Chrome or Edge. The file embeds the UI, ticket rules, PDF generator
+library, and logo; no tickets Node server or CDN is needed at runtime.
+
+Boards and generated PDFs are saved per project in IndexedDB in that browser.
+Clearing browser data removes them; other browsers/devices do not share them.
+File-URL storage behavior varies between browsers, so keep the file at a stable
+path, or serve it from a stable HTTP/HTTPS origin for predictable storage.
+
+Expand **API NF-e** to configure the lookup service base URL (initially
+`http://localhost:8000`). Requests go directly to `/nfe/{key}` on that service.
+It must allow the page's origin through CORS (a local file usually has origin
+`null`); HTTPS pages also need an HTTPS API. Drive credentials stay in the
+lookup service. Manual ticket entry and PDF generation work without the API.
+
+The existing server version remains available through `npm start`.

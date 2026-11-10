@@ -72,11 +72,11 @@ test("adversarial: a full-page ticket cannot be dropped on a grid slot", async (
   await page.reload();
 
   const fullCard = page.locator('[data-testid="sheet"][data-sheet-kind="full"] [data-testid="ticket"]');
-  await expect(fullCard.locator(".big")).toHaveText("12");
+  await expect(fullCard.locator(".cover-preview text").last()).toHaveText("12 VOLUMES");
 
   await dragCardTo(page, fullCard, slot(page, 0, 0));
 
-  await expect(page.locator("#status")).toContainText("full-page ticket needs a full-page sheet");
+  await expect(page.locator("#status")).toContainText("Um ticket de página inteira precisa de uma folha de página inteira.");
   await expect(fullCard).toBeVisible();
   expect(await occupancy(page, 0)).toEqual(["G2", "G2", null, null, null, null, null, null, null, null]);
 });
@@ -204,7 +204,6 @@ test("an nfe access-key lookup fills the form and stamps tickets with the NF-e n
         accessKey: KEY,
         nfeNumber: "521604",
         volumes: 2,
-        batches: [{ code: "B23L0947", expiry: "2025-06-30", quantity: 20 }],
         source: "drive:test",
       }),
     });
@@ -217,7 +216,6 @@ test("an nfe access-key lookup fills the form and stamps tickets with the NF-e n
   await expect(page.locator("#status")).toContainText("NF-e 521604");
   await expect(page.getByLabel("Volumes")).toHaveValue("2");
   await expect(page.getByLabel("Número da NF-e")).toHaveValue("521604");
-  await expect(page.getByLabel("ID do grupo (opcional)")).toHaveValue(KEY);
 
   await page.getByLabel("Município").fill("LAGOA DOURADA");
   await page.getByRole("button", { name: "Adicionar à fila" }).click();
@@ -225,8 +223,6 @@ test("an nfe access-key lookup fills the form and stamps tickets with the NF-e n
   await expect(page.locator('[data-testid="ticket"]')).toHaveCount(2);
   await expect(page.locator('[data-testid="nfe-number"]')).toHaveCount(2);
   await expect(page.locator('[data-testid="nfe-number"]').first()).toHaveText("NF-e 521604");
-  await expect(page.locator('[data-testid="lote-codes"]')).toHaveCount(2);
-  await expect(page.locator('[data-testid="lote-codes"]').first()).toHaveText("Lote B23L0947");
   // The 44-digit access key never appears on a card.
   await expect(page.locator('[data-testid="ticket"]')).not.toContainText(KEY);
 });

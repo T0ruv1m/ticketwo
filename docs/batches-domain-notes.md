@@ -1,3 +1,7 @@
+> Historical note: NF-e lot tracking was removed on 2026-11-10. The fields
+> and proposed changes below describe the previous implementation. Printed
+> PDF history remains supported.
+
 # Lote (batch) modelling: what the full-page ticket exposed
 
 Notes on a domain mismatch surfaced while fixing the full-page PDF layout.

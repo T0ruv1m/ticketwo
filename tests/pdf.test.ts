@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Store } from "../src/domain/store.ts";
 import { PdfLibComposer } from "../src/pdf/pdf-lib-composer.ts";
 import { A4_PROFILE, fullPageRect, slotRect } from "../src/pdf/profile.ts";
-import { addGroup, extractPdfText } from "./helpers.ts";
+import { addGroup, extractPdfGeometry, extractPdfText } from "./helpers.ts";
 
 function realStore(): Store {
   return new Store({
@@ -59,28 +59,32 @@ describe("Print determinism", () => {
     expect(resultA.batch.pdfHash).toBe(resultB.batch.pdfHash);
   });
 
-  it("embeds the full-page total and the index line", async () => {
+  it("embeds the full-page municipality, NF prompt, and volume count", async () => {
     const store = realStore();
     addGroup(store, "G1", 12);
     const result = await store.print("key");
     if (!result.printed) throw new Error("expected print");
     const text = extractPdfText(store.getPdf(result.batch.id));
-    expect(text).toContain("TOTAL DE VOLUMES");
-    expect(text).toContain("G1");
-    expect(text).toContain("12");
+    expect(text).toContain("BERLIN");
+    expect(text).toContain("NF");
+    expect(text).toContain("12 VOLUMES");
   });
 
-  it("prints the n of N index line for grid tickets", async () => {
+  it("prints the reference volume format and CISALV stamp on every grid label", async () => {
     const store = realStore();
     addGroup(store, "G1", 3);
     const result = await store.print("key");
     if (!result.printed) throw new Error("expected print");
     const text = extractPdfText(store.getPdf(result.batch.id));
-    expect(text).toContain("1 de 3");
-    expect(text).toContain("3 de 3");
+    expect(text.includes("VOLUME: 1/3")).toBe(true);
+    expect(text.includes("VOLUME: 3/3")).toBe(true);
+    const { images } = extractPdfGeometry(store.getPdf(result.batch.id));
+    expect(images).toHaveLength(10);
+    const first = slotRect(A4_PROFILE, 0);
+    expect(images[0]!.y).toBeGreaterThan(first.y + first.height / 2);
   });
 
-  it("prints NF-e number and lote codes instead of the access key", async () => {
+  it("prints the NF-e number instead of the access key", async () => {
     const store = realStore();
     store.addGroup({
       id: "31240100874929000140550010005216041964324179",
@@ -88,13 +92,11 @@ describe("Print determinism", () => {
       destination: "Berlin",
       totalVolumes: 3,
       nfeNumber: "521604",
-      batches: [{ code: "B23L0947", expiry: "2025-06-30", quantity: 20 }],
     });
     const result = await store.print("key");
     if (!result.printed) throw new Error("expected print");
     const text = extractPdfText(store.getPdf(result.batch.id));
-    expect(text).toContain("NF-e 521604");
-    expect(text).toContain("B23L0947");
+    expect(text.includes("NF DO FORNECEDOR: 521604")).toBe(true);
     expect(text).not.toContain("31240100874929000140550010005216041964324179");
   });
 
@@ -104,15 +106,16 @@ describe("Print determinism", () => {
     store.addGroup({ id: "G2", project: "ACME", destination: "Berlin", totalVolumes: 12, nfeNumber: "521999" });    const result = await store.print("key");
     if (!result.printed) throw new Error("expected print");
     const text = extractPdfText(store.getPdf(result.batch.id));
-    expect(text).toContain("NF-e 521604");
-    expect(text).toContain("NF-e 521999");
+    expect(text.includes("NF DO FORNECEDOR: 521604")).toBe(true);
+    expect(text.includes("NF 521999")).toBe(true);
   });
 
-  it("omits the NF-e line when a group has no NF-e number", async () => {
+  it("omits the NF-e line on populated tickets without a number", async () => {
     const store = realStore();
-    addGroup(store, "G1", 3);
+    addGroup(store, "G1", 10);
     const result = await store.print("key");
     if (!result.printed) throw new Error("expected print");
-    expect(extractPdfText(store.getPdf(result.batch.id))).not.toContain("NF-e");
+    // Fill the sheet so blank handwriting labels do not contribute NF-e prompts.
+    expect(extractPdfText(store.getPdf(result.batch.id)).includes("NF-e")).toBe(false);
   });
 });

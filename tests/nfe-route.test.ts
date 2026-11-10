@@ -10,7 +10,6 @@ const SAMPLE: NfeLookupResult = {
   accessKey: "31240100874929000140550010005216041964324179",
   nfeNumber: "521604",
   volumes: 3,
-  batches: [{ code: "B23L0947", expiry: "2025-06-30", quantity: 20 }],
   source: "drive:test.xml",
 };
 
@@ -78,21 +77,18 @@ describe("GET /api/nfe/:key", () => {
     expect(body.error.code).toBe("nfe-disabled");
   });
 
-  it("creates a group whose tickets carry the looked-up nfe number and lote codes", () => {
+  it("creates a group whose tickets carry the looked-up nfe number", () => {
     const store = new Store({ composer: new FakeComposer() });
     const result = store.addGroup({
       id: SAMPLE.accessKey,
       project: "ACME",
       totalVolumes: SAMPLE.volumes ?? 1,
       nfeNumber: SAMPLE.nfeNumber,
-      batches: SAMPLE.batches,
     });
     expect(result.tickets.every((t) => t.nfeNumber === "521604")).toBe(true);
-    expect(result.tickets.every((t) => t.batchCodes[0] === "B23L0947")).toBe(true);
     expect(result.group.nfeNumber).toBe("521604");
     const board = store.board();
     expect(board.tickets[0]!.nfeNumber).toBe("521604");
-    expect(board.tickets[0]!.batchCodes).toEqual(["B23L0947"]);
   });
 });
 
@@ -110,39 +106,4 @@ describe("POST /api/groups without a lookup", () => {
     expect(board.tickets.every((t) => t.nfeNumber === "521604")).toBe(true);
   });
 
-  it("accepts manually typed batch codes", async () => {
-    const store = new Store({ composer: new FakeComposer() });
-    const base = await listen(createApp(new Sessions(() => store)));
-    const res = await fetch(`${base}/api/groups`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        project: "ACME",
-        totalVolumes: 2,
-        nfeNumber: "521604",
-        codes: ["B23L0947", "B23L0948"],
-      }),
-    });
-    expect(res.status).toBe(201);
-    const board = store.board();
-    expect(board.tickets.every((t) => t.batchCodes.join(",") === "B23L0947,B23L0948")).toBe(true);
-  });
-
-  it("merges manual codes with lookup batches and de-duplicates", async () => {
-    const store = new Store({ composer: new FakeComposer() });
-    const base = await listen(createApp(new Sessions(() => store)));
-    await fetch(`${base}/api/groups`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        project: "ACME",
-        totalVolumes: 2,
-        nfeNumber: "521604",
-        batches: SAMPLE.batches,
-        codes: ["B23L0947", "B23L0948"],
-      }),
-    });
-    const board = store.board();
-    expect(board.tickets[0]!.batchCodes).toEqual(["B23L0947", "B23L0948"]);
-  });
 });

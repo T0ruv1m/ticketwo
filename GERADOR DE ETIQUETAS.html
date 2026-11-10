@@ -1,0 +1,265 @@
+<!DOCTYPE html>  
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Gerador de Etiquetas</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background-color: #f4f4f4;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+    }
+
+    label {
+      font-weight: 600;
+      margin-bottom: 6px;
+      display: block;
+      color: #333;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    select {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      box-sizing: border-box;
+      background-color: #fff;
+      font-size: 16px;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    input[type="text"]:focus,
+    input[type="number"]:focus,
+    select:focus {
+      border-color: #007BFF;
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+    }
+
+    button {
+      padding: 10px 18px;
+      background-color: #007BFF;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 15px;
+      margin-right: 5px;
+      transition: background-color 0.3s ease, transform 0.1s ease;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+      transform: translateY(-1px);
+    }
+
+    .etiquetas {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .etiqueta {
+      border: 1px solid #ccc;
+      background-color: #fff;
+      border-radius: 5px;
+      padding: 10px;
+      height: 200px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+    }
+
+    .logo {
+      width: 100%;
+      height: auto;
+      max-height: 50px;
+      margin-bottom: 10px;
+    }
+
+    .titulo {
+      font-weight: bold;
+      text-align: center;
+      margin-top: 10px;
+    }
+
+    .info {
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+    }
+
+    .info div {
+      margin: 5px 0;
+    }
+
+    .volume {
+      font-weight: bold;
+    }
+
+    .negrito {
+      font-weight: bold;
+    }
+
+    .farmacis {
+      margin-top: auto;
+      text-align: right;
+    }
+
+    .checkbox {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: none;
+}
+
+
+    @media print {
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      .etiquetas {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        page-break-before: always;
+      }
+
+      #resultado {
+        display: none;
+      }
+
+      .checkbox {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<h1>Gerador de Etiquetas</h1>
+<div>
+  <div class="form-group">
+    <label for="cidade">MUNICÍPIO:</label>
+    <input type="text" id="cidade" required>
+  </div>
+  <div class="form-group">
+    <label for="nf">NF DO FORNECEDOR:</label>
+    <input type="text" id="nf" required>
+  </div>
+  <div class="form-group">
+    <label for="tipo">TIPO:</label>
+    <select id="tipo" required>
+      <option value="MEDICAMENTO">MEDICAMENTO</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label for="quantidade">Quantidade de Volumes:</label>
+    <input type="number" id="quantidade" min="1" value="1" required>
+  </div>
+  <button onclick="gerarEtiquetas()">Adicionar Etiqueta</button>
+<button onclick="limparEtiquetas()">Apagar Tudo</button>
+<button onclick="imprimirEtiquetas()">Imprimir Etiquetas</button>
+<button onclick="mostrarSelecao()">Selecionar Etiquetas</button>
+<button onclick="excluirSelecionadas()">Excluir Selecionadas</button>
+
+</div>
+
+<div id="resultado" style="display: none;">
+  <h1>Etiquetas Geradas</h1>
+  <div class="etiquetas" id="etiquetas"></div>
+</div>
+
+<script>
+  function gerarEtiquetas() {
+    const cidade = document.getElementById('cidade').value;
+    const nf = document.getElementById('nf').value;
+    const tipo = document.getElementById('tipo').value;
+    const quantidade = parseInt(document.getElementById('quantidade').value);
+    const logoUrl = "https://www.cisalv.mg.gov.br/mainpics/cabecalho/cabecalho.png";
+    const etiquetasDiv = document.getElementById('etiquetas');
+
+    for (let i = 1; i <= quantidade; i++) {
+      const etiqueta = document.createElement('div');
+      etiqueta.className = 'etiqueta';
+
+      let titulo = tipo === "MEDICAMENTO" ?
+        `<div class="titulo" style="margin-top: 2px;">MEDICAMENTO</div>` :
+        `<div class="titulo">MATERIAL MÉDICO HOSPITALAR</div>`;
+
+      etiqueta.innerHTML = `
+        <input type="checkbox" class="checkbox" />
+        <img src="${logoUrl}" class="logo" alt="Logo">
+        ${titulo}
+        <div class="info">
+          <div class="negrito">MUNICÍPIO: ${cidade.toUpperCase()}</div>
+          <div class="volume negrito">VOLUME: ${i}/${quantidade}</div>
+          <div class="negrito">NF DO FORNECEDOR: ${nf.toUpperCase()}</div>
+        </div>
+        <div class="farmacis">FARMACIS-ESTADO</div>`;
+
+      etiquetasDiv.appendChild(etiqueta);
+    }
+
+    limparCampos();
+    document.getElementById('resultado').style.display = 'block';
+  }
+
+  function limparCampos() {
+    document.getElementById('cidade').value = '';
+    document.getElementById('nf').value = '';
+    document.getElementById('tipo').selectedIndex = 0;
+    document.getElementById('quantidade').value = 1;
+  }
+
+  function limparEtiquetas() {
+    document.getElementById('etiquetas').innerHTML = '';
+    document.getElementById('resultado').style.display = 'none';
+    limparCampos();
+  }
+
+  function imprimirEtiquetas() {
+    window.print();
+  }
+
+  function excluirSelecionadas() {
+    const etiquetas = document.querySelectorAll('.etiqueta');
+    etiquetas.forEach(etiqueta => {
+      const checkbox = etiqueta.querySelector('.checkbox');
+      if (checkbox && checkbox.checked) {
+        etiqueta.remove();
+      }
+    });
+
+    // Esconde a seção se não restar nenhuma etiqueta
+    if (document.querySelectorAll('.etiqueta').length === 0) {
+      document.getElementById('resultado').style.display = 'none';
+    }
+  }
+  function mostrarSelecao() {
+  const checkboxes = document.querySelectorAll('.checkbox');
+  checkboxes.forEach(cb => cb.style.display = 'block');
+}
+
+</script>
+
+</body>
+</html>

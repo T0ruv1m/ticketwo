@@ -2,7 +2,6 @@ export interface NfeLookupResult {
   accessKey: string;
   nfeNumber: string;
   volumes: number | null;
-  batches: { code: string; expiry: string; quantity: number }[];
   source: string;
 }
 
@@ -61,6 +60,7 @@ export class HttpNfeLookupClient implements NfeLookupClient {
         (body as { error?: { message?: string } }).error?.message ?? `nfe-lookup returned ${response.status}`;
       throw new NfeLookupError(response.status, code, message);
     }
-    return body as NfeLookupResult;
+    const result = body as NfeLookupResult;
+    return { accessKey: result.accessKey, nfeNumber: result.nfeNumber, volumes: result.volumes, source: result.source };
   }
 }

@@ -1,24 +1,15 @@
-import { PDFDocument, StandardFonts, rgb, type Color, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
-import { toBuffer } from "bwip-js/node";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import type { Ticket } from "../domain/types.ts";
 import type { Composer, PageSpec } from "./composer.ts";
-import { fullPageRect, slotRect, type CellRect, type PrintProfile } from "./profile.ts";
+import { slotRect, type CellRect, type PrintProfile } from "./profile.ts";
 import { LOGO_PNG_BASE64 } from "./logo.ts";
-
-/** Aspect ratio of imgs/gray.png (357 x 316). */
-const LOGO_ASPECT = 357 / 316;
-
-const FOOTER = "CONSÓRCIO INTERMUNICIPAL DE SAÚDE DO ALTO DAS VERTENTES";
+import { COVER_LOGO_JPG_BASE64 } from "./cover-logo.ts";
+import { COVER, coverLines } from "./cover-layout.ts";
 
 const FIXED_DATE = new Date("2000-01-01T00:00:00.000Z");
-const INK = rgb(0.08, 0.08, 0.1);
-const MUTED = rgb(0.45, 0.45, 0.5);
-const OUTLINE = rgb(0.8, 0.8, 0.83);
-const ACCENT = rgb(0.1, 0.35, 0.75);
-
-const PAD = 6;
-/** Full-page barcodes are capped so they can never grow into the lotes/footer. */
-const MAX_BARCODE_HEIGHT = 60;
+const INK = rgb(0, 0, 0);
+const BORDER = rgb(0.8, 0.8, 0.8);
+const LOGO_ASPECT = 2984 / 405;
 
 export class PdfLibComposer implements Composer {
   async compose(pages: readonly PageSpec[], profile: PrintProfile): Promise<Uint8Array> {
@@ -31,19 +22,21 @@ export class PdfLibComposer implements Composer {
     const regular = await doc.embedFont(StandardFonts.Helvetica);
     const bold = await doc.embedFont(StandardFonts.HelveticaBold);
     const logo = await doc.embedPng(LOGO_PNG_BASE64);
-
-    // One barcode per distinct access key; pages may repeat tickets.
-    const barcodes = await embedAccessKeyBarcodes(doc, pages);
-
+    const coverLogo = pages.some((page) => page.kind === "full")
+      ? await doc.embedJpg(COVER_LOGO_JPG_BASE64)
+      : undefined;
     const pageW = profile.paper.widthMm * (72 / 25.4);
     const pageH = profile.paper.heightMm * (72 / 25.4);
 
     for (const spec of pages) {
       const page = doc.addPage([pageW, pageH]);
       if (spec.kind === "grid") {
-        drawGridPage(page, spec.slots, profile, regular, bold, logo, barcodes);
+        const sheetProject = spec.slots.find((ticket) => ticket)?.project;
+        spec.slots.forEach((ticket, slot) =>
+          drawLabel(page, slotRect(profile, slot), ticket, sheetProject, regular, bold, logo),
+        );
       } else {
-        drawFullPage(page, spec.ticket, profile, regular, bold, logo, barcodes);
+        drawFullPage(page, spec.ticket, bold, coverLogo!);
       }
     }
 
@@ -51,294 +44,108 @@ export class PdfLibComposer implements Composer {
   }
 }
 
-async function embedAccessKeyBarcodes(
-  doc: PDFDocument,
-  pages: readonly PageSpec[],
-): Promise<Map<string, PDFImage>> {
-  const keys = new Set<string>();
-  for (const spec of pages) {
-    const tickets = spec.kind === "grid" ? spec.slots : [spec.ticket];
-    for (const ticket of tickets) if (ticket) keys.add(ticket.groupId);
-  }
-  const map = new Map<string, PDFImage>();
-  for (const key of keys) {
-    const png = await toBuffer({ bcid: "code128", text: key, height: 10, includetext: false });
-    map.set(key, await doc.embedPng(new Uint8Array(png)));
-  }
-  return map;
-}
-
-function drawGridPage(
-  page: PDFPage,
-  slots: readonly (Ticket | null)[],
-  profile: PrintProfile,
-  regular: PDFFont,
-  bold: PDFFont,
-  logo: PDFImage,
-  barcodes: Map<string, PDFImage>,
+/** The reference label's stamp, title, three details, and right footer. */
+function drawLabel(
+  page: PDFPage, rect: CellRect, ticket: Ticket | null,
+  sheetProject: string | undefined,
+  regular: PDFFont, bold: PDFFont, logo: PDFImage,
 ): void {
-  slots.forEach((ticket, slot) => {
-    const rect = slotRect(profile, slot);
-    if (!ticket) {
-      page.drawRectangle({
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-        borderColor: OUTLINE,
-        borderWidth: 1,
-        borderDashArray: [3, 3],
-      });
-      return;
-    }
-    drawLogo(page, logo, rect, 0.75, 0.12);
-    drawTicketCard(page, rect, ticket, regular, bold, barcodes);
+  page.drawRectangle({
+    x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+    borderColor: BORDER, borderWidth: 0.8,
   });
+
+  const left = rect.x + 10;
+  const maxW = rect.width - 20;
+  const top = rect.y + rect.height;
+  drawStamp(page, logo, rect, top - 46, rect.width - 20);
+  const project = ticket?.project ?? sheetProject;
+  drawCentered(page, labelTitle(project), bold, 11, maxW, rect.x + rect.width / 2, top - 66);
+
+  const details = ticket
+    ? [
+        `MUNICÍPIO: ${ticket.destination || "—"}`,
+        `VOLUME: ${ticket.volumeIndex ?? ticket.totalVolumes}/${ticket.totalVolumes}`,
+        ticket.nfeNumber ? `NF DO FORNECEDOR: ${ticket.nfeNumber}` : "NF DO FORNECEDOR:",
+      ]
+    : ["MUNICÍPIO:", "VOLUME:       /", "NF DO FORNECEDOR:"];
+  details.forEach((line, index) => {
+    page.drawText(fit(line.toUpperCase(), bold, 11, maxW), {
+      x: left, y: top - 86 - index * 16, size: 11, font: bold, color: INK,
+    });
+  });
+
+  drawRight(page, footer(project), bold, 9, maxW, rect.x + rect.width - 10, rect.y + 7);
 }
 
-function drawLogo(page: PDFPage, logo: PDFImage, rect: CellRect, scale: number, opacity: number): void {
-  const width = Math.min(rect.width * scale, rect.height * scale * LOGO_ASPECT);
+function labelTitle(project?: string): string {
+  if (project === "MMH") return "MATERIAL MÉDICO HOSPITALAR";
+  if (!project || project === "FARMACIS" || project === "MEDICAMENTOS") return "MEDICAMENTO";
+  return project.toUpperCase();
+}
+
+function footer(project?: string): string {
+  return project ? `${project.toUpperCase()}-ESTADO` : "FARMACIS-ESTADO";
+}
+
+function drawStamp(page: PDFPage, logo: PDFImage, rect: CellRect, y: number, width: number): void {
   const height = width / LOGO_ASPECT;
   page.drawImage(logo, {
-    x: rect.x + rect.width / 2 - width / 2,
-    y: rect.y + rect.height / 2 - height / 2,
-    width,
-    height,
-    opacity,
+    x: rect.x + (rect.width - width) / 2, y, width, height,
   });
 }
 
-function drawFooter(page: PDFPage, rect: CellRect, font: PDFFont, size: number, color: Color): void {
-  const width = font.widthOfTextAtSize(FOOTER, size);
-  page.drawText(fit(FOOTER, font, size, rect.width - PAD * 2), {
-    x: rect.x + rect.width / 2 - width / 2,
-    y: rect.y + PAD,
-    size,
-    font,
-    color,
-  });
-}
-
-function drawTicketCard(
-  page: PDFPage,
-  rect: CellRect,
-  ticket: Ticket,
-  regular: PDFFont,
-  bold: PDFFont,
-  barcodes: Map<string, PDFImage>,
-): void {
-  page.drawRectangle({
-    x: rect.x,
-    y: rect.y,
-    width: rect.width,
-    height: rect.height,
-    borderColor: INK,
-    borderWidth: 1.2,
-  });
-
-  const left = rect.x + PAD;
-  const maxW = rect.width - PAD * 2;
-  let cursorY = rect.y + rect.height - PAD - 11;
-
-  const index = `${ticket.volumeIndex} de ${ticket.totalVolumes}`;
-  const indexWidth = bold.widthOfTextAtSize(index, 15);
-  page.drawText(index, { x: left, y: cursorY, size: 15, font: bold, color: INK });
-
-  // Project name sits on the same line as the volume count, on the right side.
-  const projectGap = 12;
-  const projectMaxW = maxW - indexWidth - projectGap;
-  if (projectMaxW > 20) {
-    const project = fit(ticket.project, bold, 11, projectMaxW);
-    const projectWidth = bold.widthOfTextAtSize(project, 11);
-    page.drawText(project, {
-      x: rect.x + rect.width - PAD - projectWidth,
-      y: cursorY + 2,
-      size: 10,
-      font: bold,
-      color: INK,
-    });
-  }
-  cursorY -= 22;
-
-  // Município name is emphasized below the project line.
-  const destination = fit(ticket.destination || "—", bold, 14, maxW);
-  page.drawText(destination, {
-    x: left,
-    y: cursorY,
-    size: 14,
-    font: bold,
-    color: INK,
-  });
-  cursorY -= 16;
-
-  // The 44-digit access key is printed only as a barcode; the NF-e number and
-  // lote codes identify the shipment. Plain groups keep the group id text.
-  if (ticket.nfeNumber) {
-    page.drawText(`NF-e ${ticket.nfeNumber}`, {
-      x: left,
-      y: cursorY,
-      size: 14,
-      font: regular,
-      color: MUTED,
-    });
-    cursorY -= 16;
-  }
-
-  if (ticket.batchCodes.length > 0) {
-    const box = 9;
-    const textboxGap = 4;
-    const gap = 9;
-    let x = left;
-    for (const code of ticket.batchCodes) {
-      // Inline layout: every code gets a checkbox beside it, never stacked.
-      const text = code;
-      const textW = regular.widthOfTextAtSize(text, 10);
-      const itemW = textW + textboxGap + box;
-      if (x + itemW > left + maxW && x > left) {
-        x = left;
-        cursorY -= 15;
-      }
-      page.drawRectangle({
-        x,
-        y: cursorY + 1,
-        width: box,
-        height: box,
-        borderColor: OUTLINE,
-        borderWidth: 0.9,
-      });
-      page.drawText(text, { x: x + box + textboxGap, y: cursorY, size: 10, font: regular, color: MUTED });
-      x += itemW + gap;
-    }
-    cursorY -= 15;
-  } else if (!ticket.nfeNumber) {
-    page.drawText(fit(ticket.groupId, regular, 10, maxW), {
-      x: left,
-      y: cursorY,
-      size: 10,
-      font: regular,
-      color: MUTED,
-      });
-    cursorY -= 15;
-  }
-
-  drawBarcode(page, barcodes.get(ticket.groupId)!, rect, 0.8, 14);
-  drawFooter(page, rect, regular, 6, MUTED);
-}
-
-function drawBarcode(
-  page: PDFPage,
-  barcode: PDFImage | undefined,
-  rect: CellRect,
-  widthFraction: number,
-  bottomOffset: number,
-): void {
-  if (!barcode) return;
-  const width = Math.min(rect.width * widthFraction, rect.width - PAD * 2);
-  const height = width / (barcode.width / barcode.height);
-  page.drawImage(barcode, {
-    x: rect.x + rect.width / 2 - width / 2,
-    y: rect.y + bottomOffset,
-    width,
-    height,
-  });
-}
-
+/** Reproduce the frame, logo, typography, and spacing of docs/capa.pdf. */
 function drawFullPage(
-  page: PDFPage,
-  ticket: Ticket,
-  profile: PrintProfile,
-  regular: PDFFont,
-  bold: PDFFont,
-  logo: PDFImage,
-  barcodes: Map<string, PDFImage>,
+  page: PDFPage, ticket: Ticket, bold: PDFFont, logo: PDFImage,
 ): void {
-  const rect = fullPageRect(profile);
-  page.drawRectangle({
-    x: rect.x,
-    y: rect.y,
-    width: rect.width,
-    height: rect.height,
-    borderColor: INK,
-    borderWidth: 2,
-  });
-
-  drawLogo(page, logo, rect, 0.8, 0.13);
-
-  const centerX = rect.x + rect.width / 2;
-  const maxW = rect.width - PAD * 2;
-
-  const total = String(ticket.totalVolumes);
-  const bigSize = 200;
-  const totalWidth = bold.widthOfTextAtSize(total, bigSize);
-  page.drawText(total, {
-    x: centerX - totalWidth / 2,
-    y: rect.y + rect.height * 0.42,
-    size: bigSize,
-    font: bold,
-    color: ACCENT,
-  });
-
-  const label = "TOTAL DE VOLUMES";
-  const labelWidth = regular.widthOfTextAtSize(label, 18);
-  page.drawText(label, {
-    x: centerX - labelWidth / 2,
-    y: rect.y + rect.height * 0.42 - 32,
-    size: 18,
-    font: regular,
-    color: MUTED,
-  });
-
-  // Bottom stack, anchored to the page edge and built upward: access-key text,
-  // barcode (height-capped), then the consórcio footer above it.
-  const keySize = 9;
-  const keyY = rect.y + PAD;
-  drawCentered(page, ticket.groupId, regular, keySize, maxW, centerX, keyY, MUTED);
-
-  const barcode = barcodes.get(ticket.groupId);
-  const barcodeBottom = keyY + keySize + 6;
-  let barcodeTop = barcodeBottom;
-  if (barcode) {
-    const aspect = barcode.width / barcode.height;
-    const width = Math.min(rect.width * 0.8, MAX_BARCODE_HEIGHT * aspect);
-    const height = width / aspect;
-    page.drawImage(barcode, { x: centerX - width / 2, y: barcodeBottom, width, height });
-    barcodeTop = barcodeBottom + height;
+  const sx = page.getWidth() / COVER.width;
+  const sy = page.getHeight() / COVER.height;
+  for (const box of COVER.frame) {
+    page.drawRectangle({
+      x: box.x * sx, y: page.getHeight() - (box.y + box.height) * sy,
+      width: box.width * sx, height: box.height * sy, color: INK,
+    });
   }
-
-  const footerSize = 7;
-  const footerY = barcodeTop + 10;
-  drawCentered(page, FOOTER, regular, footerSize, maxW, centerX, footerY, MUTED);
-
-  // Identity block, flowing up from the footer toward the volume count. A full
-  // page covers a whole group, so it has no per-volume lote checkboxes.
-  let y = footerY + footerSize + 26;
-  if (ticket.nfeNumber) {
-    drawCentered(page, `NF-e ${ticket.nfeNumber}`, regular, 22, maxW, centerX, y, MUTED);
-    y += 34;
-  }
-  drawCentered(page, ticket.destination || "—", regular, 22, maxW, centerX, y, INK);
-  y += 34;
-  drawCentered(page, ticket.project, bold, 25, maxW, centerX, y, INK);
+  const stamp = COVER.logo;
+  page.drawImage(logo, {
+    x: stamp.x * sx, y: page.getHeight() - (stamp.y + stamp.height) * sy,
+    width: stamp.width * sx, height: stamp.height * sy,
+  });
+  coverLines(ticket).forEach((line, index) => {
+    // Keep long municipality names complete by reducing their type size.
+    const size = Math.min(COVER.fontSize, COVER.fontSize * COVER.maxTextWidth /
+      bold.widthOfTextAtSize(line, COVER.fontSize)) * Math.min(sx, sy);
+    drawCentered(page, line, bold, size, COVER.maxTextWidth * sx,
+      page.getWidth() / 2, page.getHeight() - COVER.baselines[index]! * sy);
+  });
 }
 
 function drawCentered(
-  page: PDFPage,
-  text: string,
-  font: PDFFont,
-  size: number,
-  maxWidth: number,
-  centerX: number,
-  y: number,
-  color: Color,
+  page: PDFPage, value: string, font: PDFFont, size: number,
+  maxWidth: number, centerX: number, y: number,
 ): void {
-  const shown = fit(text, font, size, maxWidth);
-  const width = font.widthOfTextAtSize(shown, size);
-  page.drawText(shown, { x: centerX - width / 2, y, size, font, color });
+  const shown = fit(value, font, size, maxWidth);
+  page.drawText(shown, {
+    x: centerX - font.widthOfTextAtSize(shown, size) / 2,
+    y, size, font, color: INK,
+  });
 }
 
-function fit(text: string, font: PDFFont, size: number, maxWidth: number): string {
-  if (font.widthOfTextAtSize(text, size) <= maxWidth) return text;
-  let result = text;
+function drawRight(
+  page: PDFPage, value: string, font: PDFFont, size: number,
+  maxWidth: number, rightX: number, y: number,
+): void {
+  const shown = fit(value, font, size, maxWidth);
+  page.drawText(shown, {
+    x: rightX - font.widthOfTextAtSize(shown, size),
+    y, size, font, color: INK,
+  });
+}
+
+function fit(value: string, font: PDFFont, size: number, maxWidth: number): string {
+  if (font.widthOfTextAtSize(value, size) <= maxWidth) return value;
+  let result = value;
   while (result.length > 1 && font.widthOfTextAtSize(`${result}…`, size) > maxWidth) {
     result = result.slice(0, -1);
   }
