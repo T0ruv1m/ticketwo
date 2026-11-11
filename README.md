@@ -24,6 +24,14 @@ npm start            # builds the UI and serves http://localhost:8787
 npm run dev          # API on :8787, Vite dev server on :5173 (proxies /api)
 ```
 
+For Docker hosting with the sibling `nfe-lookup2` API and LAN troubleshooting,
+see [docs/hosting.md](docs/hosting.md).
+
+The hosted server appends every successfully printed batch to `var/prints.jsonl`.
+Set `PRINT_AUDIT_LOG_PATH` to keep that append-only audit file elsewhere. Each
+line is a self-contained JSON record with the printed timestamp, PDF hash, and
+ticket metadata (including AF/OS, Empenho, and the NF-e barcode when supplied).
+
 ## Test
 
 ```bash
@@ -91,7 +99,8 @@ print layout library is hidden behind `Composer`, so it can be swapped or faked
   município, volume, and supplier NF lines, then a right-aligned project footer.
   Lote codes appear on an extra line when present. Full-page group sheets keep
   the large total in the same visual style.
-- **Audit** — batches are immutable snapshots; only whole-batch deletion exists.
+- **Audit** — batches are immutable snapshots; each hosted-server print is also
+  appended as one durable JSONL record. Only whole-batch deletion exists in the UI.
 
 ## Decisions worth calling out
 
@@ -114,7 +123,8 @@ print layout library is hidden behind `Composer`, so it can be swapped or faked
 
 - Drag does not physically reflow cards while dragging; it previews the exact
   landing range (accent highlight) and rejects impossible drops with no preview.
-- No persistence: the store is in-memory, so restarting the server clears state.
+- The queue and PDFs are in-memory, so restarting the server clears them; the
+  append-only hosted-server audit log remains.
 - The PDF is kept in memory per batch to serve it later; there is no archive.
 
 ## Single-file version
@@ -129,7 +139,7 @@ File-URL storage behavior varies between browsers, so keep the file at a stable
 path, or serve it from a stable HTTP/HTTPS origin for predictable storage.
 
 Expand **API NF-e** to configure the lookup service base URL (initially
-`http://localhost:8000`). Requests go directly to `/nfe/{key}` on that service.
+`http://192.168.3.127:18000`). Requests go directly to `/nfe/{key}` on that service.
 It must allow the page's origin through CORS (a local file usually has origin
 `null`); HTTPS pages also need an HTTPS API. Drive credentials stay in the
 lookup service. Manual ticket entry and PDF generation work without the API.

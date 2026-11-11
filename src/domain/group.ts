@@ -11,6 +11,9 @@ export interface CreateGroupInput {
   destination?: string;
   totalVolumes: number;
   nfeNumber?: string | null;
+  nfeAccessKey?: string | null;
+  afOs?: string | null;
+  empenho?: string | null;
 }
 
 export function assertValidProject(project: unknown): asserts project is string {
@@ -47,6 +50,9 @@ export function buildGroup(input: CreateGroupInput, now: string): Group {
     destination: (input.destination ?? "").trim(),
     totalVolumes: input.totalVolumes,
     nfeNumber: input.nfeNumber?.trim() ? input.nfeNumber.trim() : null,
+    nfeAccessKey: input.nfeAccessKey?.trim() ? input.nfeAccessKey.trim() : null,
+    afOs: input.afOs?.trim() ? input.afOs.trim() : null,
+    empenho: input.empenho?.trim() ? input.empenho.trim() : null,
     createdAt: now,
   };
 }

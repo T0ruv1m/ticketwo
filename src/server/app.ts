@@ -14,6 +14,9 @@ const createGroupSchema = z.object({
   destination: z.string().optional(),
   totalVolumes: z.number(),
   nfeNumber: z.string().optional(),
+  nfeAccessKey: z.string().optional(),
+  afOs: z.string().optional(),
+  empenho: z.string().optional(),
 });
 
 const moveSchema = z.object({
@@ -135,6 +138,12 @@ export function createApp(sessions: Sessions, options: AppOptions = {}): express
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${req.params.id}.pdf"`);
     res.send(Buffer.from(bytes));
+  });
+
+  app.post("/api/batches/:id/restore", (req, res) => {
+    const store = sessions.forProject(projectFrom(req));
+    store.restoreBatch(req.params.id);
+    res.json({ board: store.board(), batches: store.listBatches() });
   });
 
   app.delete("/api/batches/:id", (req, res) => {

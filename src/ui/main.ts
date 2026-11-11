@@ -235,6 +235,7 @@ function renderBatches(): void {
               <div class="muted">${esc(batch.id.slice(0, 8))} · ${esc(batch.printedAt)}</div>
             </div>
             <a href="/api/batches/${encodeURIComponent(batch.id)}/pdf" target="_blank" rel="noopener" aria-label="Abrir o PDF composto para imprimir">Imprimir PDF</a>
+            <button type="button" data-action="restore-batch" data-batch-id="${esc(batch.id)}">Desfazer impressão</button>
             <button type="button" class="icon" data-action="delete-batch" data-batch-id="${esc(
               batch.id,
             )}" aria-label="Excluir o lote">✕</button>
@@ -523,6 +524,12 @@ form.addEventListener("submit", async (event) => {
   };
   const nfeNumber = String(data.get("nfeNumber") ?? "").trim();
   if (nfeNumber) body.nfeNumber = nfeNumber;
+  const nfeAccessKey = String(data.get("accessKey") ?? "").replace(/\D/g, "");
+  if (nfeAccessKey) body.nfeAccessKey = nfeAccessKey;
+  const afOs = String(data.get("afOs") ?? "").trim();
+  if (afOs) body.afOs = afOs;
+  const empenho = String(data.get("empenho") ?? "").trim();
+  if (empenho) body.empenho = empenho;
   addingGroup = true;
   const addButton = form.querySelector<HTMLButtonElement>('[type="submit"]')!;
   addButton.disabled = true;
@@ -553,6 +560,19 @@ groupsEl.addEventListener("click", async (event) => {
 });
 
 batchesEl.addEventListener("click", async (event) => {
+  const restore = (event.target as HTMLElement).closest<HTMLElement>('[data-action="restore-batch"]');
+  if (restore) {
+    const id = restore.dataset.batchId ?? "";
+    if (!window.confirm("Restaurar este lote à fila? O PDF do lote será removido.")) return;
+    try {
+      await api(`/api/batches/${encodeURIComponent(id)}/restore`, {});
+      setStatus("Lote restaurado à fila.");
+      await load();
+    } catch (err) {
+      setStatus(friendly(err), true);
+    }
+    return;
+  }
   const button = (event.target as HTMLElement).closest<HTMLElement>('[data-action="delete-batch"]');
   if (!button) return;
   const id = button.dataset.batchId ?? "";

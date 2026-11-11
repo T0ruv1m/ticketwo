@@ -62,10 +62,10 @@ export function pdfUrl(id: string): string {
 }
 
 const settings = document.createElement('details');
-settings.innerHTML = '<summary>API NF-e</summary><label>Endereço do serviço <input type="url" placeholder="http://localhost:8000" aria-label="Endereço da API NF-e"></label><p>Configure o serviço usado para consultar as notas fiscais.</p>';
+settings.innerHTML = '<summary>API NF-e</summary><label>Endereço do serviço <input type="url" placeholder="http://192.168.3.127:18000" aria-label="Endereço da API NF-e"></label><p>Configure o serviço usado para consultar as notas fiscais.</p>';
 document.getElementById('connection-settings')!.append(settings);
 const endpoint = settings.querySelector('input')!;
-endpoint.value = localStorage.getItem('tickets-nfe-url') ?? 'http://localhost:8000';
+endpoint.value = localStorage.getItem('tickets-nfe-url') ?? 'http://192.168.3.127:18000';
 endpoint.addEventListener('change', () => localStorage.setItem('tickets-nfe-url', endpoint.value.trim()));
 
 let queue: Promise<unknown> = Promise.resolve();
@@ -91,6 +91,7 @@ export function localFetch(path: string, init: RequestInit): Promise<Response> {
       else if (path === '/api/key-move') result = store.keyMove(body.ticketId, body.direction as MoveDirection);
       else if (path === '/api/auto-arrange') result = store.autoArrange();
       else if (path === '/api/print') result = await store.print(body.idempotencyKey);
+      else if (path.startsWith('/api/batches/') && path.endsWith('/restore')) { store.restoreBatch(decodeURIComponent(path.split('/')[3]!)); result = { board: store.board(), batches: store.listBatches() }; }
       else throw new Error(`Unknown operation: ${path}`);
       if (init.body !== undefined || init.method === 'DELETE') await persist(name, store);
       return Response.json(result);

@@ -45,12 +45,17 @@ export type PrintResult =
   | { printed: true; batch: Batch; idempotent: boolean }
   | { printed: false; reason: "empty-queue" };
 
+export interface PrintAuditLog {
+  append(batch: Batch): Promise<void>;
+}
+
 export interface StoreOptions {
   composer: Composer;
   profile?: PrintProfile;
   now?: () => Date;
   idFactory?: () => string;
   renderTimeoutMs?: number;
+  auditLog?: PrintAuditLog;
 }
 
 export class Store {
@@ -70,6 +75,7 @@ export class Store {
   private readonly now: () => Date;
   private readonly idFactory: () => string;
   private readonly renderTimeoutMs: number;
+  private readonly auditLog: PrintAuditLog | undefined;
 
   constructor(options: StoreOptions) {
     this.composer = options.composer;
@@ -77,6 +83,7 @@ export class Store {
     this.now = options.now ?? (() => new Date());
     this.idFactory = options.idFactory ?? (() => randomUUID());
     this.renderTimeoutMs = options.renderTimeoutMs ?? 10_000;
+    this.auditLog = options.auditLog;
   }
 
   reset(): void {
@@ -97,7 +104,10 @@ export class Store {
           existing.project === input.project.trim() &&
           existing.destination === (input.destination ?? "").trim() &&
           existing.totalVolumes === input.totalVolumes &&
-          existing.nfeNumber === (input.nfeNumber?.trim() || null);
+          existing.nfeNumber === (input.nfeNumber?.trim() || null) &&
+          existing.nfeAccessKey === (input.nfeAccessKey?.trim() || null) &&
+          existing.afOs === (input.afOs?.trim() || null) &&
+          existing.empenho === (input.empenho?.trim() || null);
         if (!same) {
           throw new DomainError(
             "duplicate-group-mismatch",
@@ -207,8 +217,14 @@ export class Store {
       id: this.idFactory(),
       printedAt: this.now().toISOString(),
       pdfHash: createHash("sha256").update(bytes).digest("hex"),
-      tickets: pending.map(snapshot),
+      tickets: pending.map((ticket) => snapshot(ticket, this.groups.get(ticket.groupId))),
     };
+
+    try {
+      await this.auditLog?.append(batch);
+    } catch (error) {
+      throw new DomainError("audit-write-failed", `could not write print audit record: ${(error as Error).message}`);
+    }
 
     // Atomic commit: only after a complete render.
     this.batches.push(batch);
@@ -238,6 +254,22 @@ export class Store {
     const bytes = this.pdfBytes.get(batchId);
     if (!bytes) throw new DomainError("batch-not-found", `no PDF for batch ${batchId}`);
     return bytes;
+  }
+
+  restoreBatch(batchId: string): void {
+    const index = this.batches.findIndex((b) => b.id === batchId);
+    if (index < 0) throw new DomainError("batch-not-found", `no batch ${batchId}`);
+    const batch = this.batches[index]!;
+    for (const snapshot of batch.tickets) {
+      const ticket = this.tickets.get(snapshot.ticketId);
+      if (ticket) ticket.status = "pending";
+    }
+    this.batches.splice(index, 1);
+    this.pdfBytes.delete(batchId);
+    for (const [key, id] of this.idempotency) {
+      if (id === batchId) this.idempotency.delete(key);
+    }
+    this.autoArrange();
   }
 
   deleteBatch(batchId: string): void {
@@ -305,7 +337,7 @@ function firstRun(slots: readonly (string | null)[], size: number): number {
   return -1;
 }
 
-function snapshot(ticket: Ticket): BatchSnapshot {
+function snapshot(ticket: Ticket, group: Group | undefined): BatchSnapshot {
   return {
     ticketId: ticket.id,
     groupId: ticket.groupId,
@@ -315,6 +347,9 @@ function snapshot(ticket: Ticket): BatchSnapshot {
     volumeIndex: ticket.volumeIndex,
     totalVolumes: ticket.totalVolumes,
     nfeNumber: ticket.nfeNumber,
+    nfeAccessKey: group?.nfeAccessKey ?? null,
+    afOs: group?.afOs ?? null,
+    empenho: group?.empenho ?? null,
   };
 }
 

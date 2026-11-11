@@ -1,0 +1,35 @@
+services:
+  api:
+    build:
+      context: ../nfe-lookup2
+      dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../nfe-lookup2/.env
+    environment:
+      NFE_STORE: drive
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 5
+  tickets:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${TICKETS_BIND_ADDRESS:-0.0.0.0}:${TICKETS_HOST_PORT:-8787}:8787"
+    environment:
+      NFE_LOOKUP_URL: http://api:8000
+      PRINT_AUDIT_LOG_PATH: /app/var/prints.jsonl
+    volumes:
+      - ./var:/app/var
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3

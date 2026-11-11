@@ -7,6 +7,9 @@ export interface Group {
   destination: string;
   totalVolumes: number;
   nfeNumber: string | null;
+  nfeAccessKey: string | null;
+  afOs: string | null;
+  empenho: string | null;
   createdAt: string;
 }
 
@@ -45,6 +48,9 @@ export interface BatchSnapshot {
   volumeIndex: number | null;
   totalVolumes: number;
   nfeNumber: string | null;
+  nfeAccessKey: string | null;
+  afOs: string | null;
+  empenho: string | null;
 }
 
 export interface Batch {

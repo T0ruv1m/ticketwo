@@ -14,6 +14,43 @@ describe("State", () => {
     expect(second).toEqual({ printed: false, reason: "empty-queue" });
   });
 
+  it("stores optional shipment references and the NF-e barcode in print records only", async () => {
+    const { store } = makeStore();
+    store.addGroup({
+      id: "G1",
+      project: "ACME",
+      destination: "Berlin",
+      totalVolumes: 2,
+      nfeNumber: "521604",
+      nfeAccessKey: "31240100874929000140550010005216041964324179",
+      afOs: "AF 123/2026",
+      empenho: "NE 456/2026",
+    });
+
+    const result = await store.print("k1");
+    if (!result.printed) throw new Error("expected print");
+
+    expect(result.batch.tickets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        nfeAccessKey: "31240100874929000140550010005216041964324179",
+        afOs: "AF 123/2026",
+        empenho: "NE 456/2026",
+      }),
+    ]));
+    expect(store.board().tickets).toEqual([]);
+  });
+
+  it("does not mark tickets printed when writing the audit record fails", async () => {
+    const { store } = makeStore({
+      auditLog: { append: async () => { throw new Error("disk full"); } },
+    });
+    addGroup(store, "G1", 2);
+
+    await expect(store.print("k1")).rejects.toMatchObject({ code: "audit-write-failed" });
+    expect(store.listBatches()).toEqual([]);
+    expect(store.board().tickets).toHaveLength(2);
+  });
+
   it("print failure records nothing", async () => {
     const { store, composer } = makeStore();
     composer.behavior = "throw";
@@ -44,6 +81,19 @@ describe("State", () => {
     expect(store.listBatches()).toHaveLength(0);
     expect(() => store.deleteBatch(batch.id)).toThrow(DomainError);
     expect(before).toContain("G1");
+  });
+
+  it("restores a printed batch to the queue without preserving positions", async () => {
+    const { store } = makeStore();
+    store.addGroup({ id: "G1", project: "ACME", destination: "Berlin", totalVolumes: 3 });
+    const printed = await store.print("restore-key");
+    if (!printed.printed) throw new Error("expected print");
+
+    store.restoreBatch(printed.batch.id);
+
+    expect(store.listBatches()).toHaveLength(0);
+    expect(store.board().tickets.map((ticket) => ticket.status)).toEqual(["pending", "pending", "pending"]);
+    expect(store.board().tickets.map((ticket) => ticket.groupId)).toEqual(["G1", "G1", "G1"]);
   });
 });
 

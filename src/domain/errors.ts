@@ -12,7 +12,8 @@ export type DomainErrorCode =
   | "invalid-idempotency-key"
   | "batch-not-found"
   | "render-failed"
-  | "render-timeout";
+  | "render-timeout"
+  | "audit-write-failed";
 
 export class DomainError extends Error {
   readonly code: DomainErrorCode;
