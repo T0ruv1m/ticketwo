@@ -23,7 +23,7 @@ export async function addGroup(
 
 export async function open(page: Page): Promise<void> {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "tickets" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Gerador de etiquetas" })).toBeVisible();
 }
 
 export function gridSheet(page: Page, index = 0) {

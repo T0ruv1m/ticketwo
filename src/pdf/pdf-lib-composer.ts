@@ -85,7 +85,8 @@ function labelTitle(project?: string): string {
 }
 
 function footer(project?: string): string {
-  return project ? `${project.toUpperCase()}-ESTADO` : "FARMACIS-ESTADO";
+  if (!project || project === "FARMACIS") return "FARMACIS-ESTADO";
+  return project.toUpperCase();
 }
 
 function drawStamp(page: PDFPage, logo: PDFImage, rect: CellRect, y: number, width: number): void {

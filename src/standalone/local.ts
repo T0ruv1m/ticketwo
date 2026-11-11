@@ -62,8 +62,8 @@ export function pdfUrl(id: string): string {
 }
 
 const settings = document.createElement('details');
-settings.innerHTML = '<summary>API NF-e</summary><label>Endereço do serviço <input type="url" placeholder="http://localhost:8000" aria-label="Endereço da API NF-e"></label><p>Dados salvos neste navegador. A API deve permitir CORS para esta página.</p>';
-document.querySelector('header')!.append(settings);
+settings.innerHTML = '<summary>API NF-e</summary><label>Endereço do serviço <input type="url" placeholder="http://localhost:8000" aria-label="Endereço da API NF-e"></label><p>Configure o serviço usado para consultar as notas fiscais.</p>';
+document.getElementById('connection-settings')!.append(settings);
 const endpoint = settings.querySelector('input')!;
 endpoint.value = localStorage.getItem('tickets-nfe-url') ?? 'http://localhost:8000';
 endpoint.addEventListener('change', () => localStorage.setItem('tickets-nfe-url', endpoint.value.trim()));

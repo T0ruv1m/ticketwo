@@ -5,6 +5,9 @@ import { MUNICIPIOS, PROJETOS, DEFAULT_PROJECT } from "../shared/picklists.ts";
 import { makeIdempotencyKey } from "./keys.ts";
 import { COVER, coverLines } from "../pdf/cover-layout.ts";
 import { COVER_LOGO_JPG_BASE64 } from "../pdf/cover-logo.ts";
+import { LOGO_PNG_BASE64 } from "../pdf/logo.ts";
+
+(document.getElementById("brand-logo") as HTMLImageElement).src = `data:image/png;base64,${LOGO_PNG_BASE64}`;
 
 const boardEl = document.getElementById("board") as HTMLDivElement;
 const tabsEl = document.getElementById("sheet-tabs") as HTMLDivElement;
@@ -37,6 +40,10 @@ async function api<T>(path: string, body?: unknown, method?: string): Promise<T>
     throw new ApiError(data.error?.code ?? "http-error", data.error?.message ?? res.statusText);
   }
   return data;
+}
+
+function batchPdfUrl(id: string): string {
+  return `/api/batches/${encodeURIComponent(id)}/pdf`;
 }
 
 let board: BoardView = { sheets: [], tickets: [], groups: [], positions: {} };
@@ -169,7 +176,7 @@ function renderTabs(): void {
       const active = activeSheetId === sheet.id ? " active" : "";
       return `<button type="button" class="tab${active}" role="tab" data-testid="sheet-tab" data-sheet-id="${esc(
         sheet.id,
-      )}">Sheet ${index + 1}</button>`;
+      )}" aria-selected="${activeSheetId === sheet.id}">Folha ${index + 1}</button>`;
     })
     .join("");
 }
@@ -199,13 +206,14 @@ function renderGroups(): void {
     counts.set(ticket.groupId, (counts.get(ticket.groupId) ?? 0) + 1);
   }
   const groups = board.groups.filter((group: Group) => (counts.get(group.id) ?? 0) > 0);
+  document.getElementById("queue-count")!.textContent = String(groups.length);
   groupsEl.innerHTML = groups.length
     ? groups
         .map(
           (group) => `<li class="queue-item" data-testid="queue-group" data-group-id="${esc(group.id)}">
             <div class="grow">
-              <div><strong>${esc(group.project)}</strong> · ${esc(group.destination || "—")}</div>
-              <div class="muted">${esc(group.id)} · ${counts.get(group.id) ?? 0} etiqueta(s)</div>
+              <div><strong>${esc(group.destination || "Sem município")}</strong></div>
+              <div class="muted">${group.nfeNumber ? `NF-e ${esc(group.nfeNumber)} · ` : ""}${counts.get(group.id) ?? 0} etiqueta(s)</div>
             </div>
             <button type="button" class="icon" data-action="delete-group" data-group-id="${esc(
               group.id,
@@ -239,6 +247,7 @@ function renderBatches(): void {
 let latestBatches: Batch[] = [];
 
 function renderBoard(): void {
+  document.getElementById("board-summary")!.textContent = `${board.sheets.length} folha(s) · ${board.tickets.length} etiqueta(s)`;
   const scrollLeft = boardEl.scrollLeft;
   const scrollTop = boardEl.scrollTop;
   boardEl.innerHTML = board.sheets.map(sheetHtml).join("");
@@ -261,6 +270,7 @@ async function load(): Promise<void> {
   board = await api<BoardView>("/api/board");
   latestBatches = (await api<{ batches: Batch[] }>("/api/batches")).batches;
   if (activeSheetId && !board.sheets.some((s) => s.id === activeSheetId)) activeSheetId = null;
+  activeSheetId ??= board.sheets[0]?.id ?? null;
   renderBoard();
 }
 
@@ -572,6 +582,7 @@ document.getElementById("print")!.addEventListener("click", async () => {
       { printed: true; batch: Batch; idempotent: boolean } | { printed: false; reason: string }
     >("/api/print", { idempotencyKey: printKey });
     if (result.printed) {
+      window.open(batchPdfUrl(result.batch.id), "_blank", "noopener");
       setStatus(`Imprimidos ${result.batch.tickets.length} etiqueta(s).`);
       printKey = null;
     } else {

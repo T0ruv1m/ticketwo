@@ -100,6 +100,24 @@ describe("Print determinism", () => {
     expect(text).not.toContain("31240100874929000140550010005216041964324179");
   });
 
+  it("uses the Estado suffix only for Farmacis labels", async () => {
+    const farmacis = realStore();
+    farmacis.addGroup({ id: "F1", project: "FARMACIS", destination: "Berlin", totalVolumes: 1 });
+    const farmacisResult = await farmacis.print("farmacis-key");
+    if (!farmacisResult.printed) throw new Error("expected print");
+    const farmacisText = extractPdfText(farmacis.getPdf(farmacisResult.batch.id));
+    expect(farmacisText).toContain("FARMACIS-ESTADO");
+
+    const mmh = realStore();
+    mmh.addGroup({ id: "M1", project: "MMH", destination: "Berlin", totalVolumes: 1 });
+    const mmhResult = await mmh.print("mmh-key");
+    if (!mmhResult.printed) throw new Error("expected print");
+    const mmhText = extractPdfText(mmh.getPdf(mmhResult.batch.id));
+    expect(mmhText).toContain("MATERIAL MÉDICO HOSPITALAR");
+    expect(mmhText).toContain("MMH");
+    expect(mmhText).not.toContain("MMH-ESTADO");
+  });
+
   it("prints the NF-e number on grid and full-page tickets", async () => {
     const store = realStore();
     store.addGroup({ id: "G1", project: "ACME", destination: "Berlin", totalVolumes: 3, nfeNumber: "521604" });

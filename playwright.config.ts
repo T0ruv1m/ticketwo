@@ -14,6 +14,9 @@ export default defineConfig({
     baseURL: "http://localhost:8799",
     trace: "retain-on-failure",
     ...devices["Desktop Chrome"],
+    launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+      : {},
   },
   webServer: {
     command: "npx vite build && TICKETS_TEST=1 PORT=8799 npx tsx src/server/main.ts",

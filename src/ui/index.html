@@ -1,45 +1,41 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>tickets</title>    <link rel="stylesheet" href="/styles.css" />
+    <title>CISALV · Gerador de etiquetas</title>
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div id="app">
-      <header>
-        <h1>tickets</h1>
-        <div class="project-picker">
-          <label for="project-select">Projeto</label>
-          <select id="project-select" aria-label="Projeto"></select>
+      <header class="app-header">
+        <div class="brand">
+          <span class="brand-mark"><img id="brand-logo" alt="" /></span>
+          <div><strong>CISALV</strong><span>Consórcio Intermunicipal de Saúde<br />do Alto das Vertentes</span></div>
         </div>
-        <div class="actions">
-          <button id="auto-arrange" type="button">Auto-organizar</button>
-          <button id="print" type="button" class="primary">Imprimir lote</button>
-        </div>
-        <div id="status" role="status" aria-live="polite"></div>
-        <div class="lookup">
-          <label for="access-key">Chave de acesso (NF-e)</label>
-          <div class="key-row">
-            <input
-              id="access-key"
-              form="add-group"
-              name="accessKey"
-              inputmode="numeric"
-              placeholder="44 dígitos"
-            />
-            <button type="button" id="lookup-nfe">Consultar</button>
-          </div>
-        </div>
+        <h1>Gerador de etiquetas <span>Expedição de remessas</span></h1>
       </header>
+      <div class="toolbar" role="toolbar" aria-label="Ações da prancheta">
+        <div class="module-title"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="2" width="14" height="16" rx="1"/><path d="M10 2v16M3 7h14M3 12h14"/></svg>Etiquetas e capas</div>
+        <div class="actions">
+          <button id="auto-arrange" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 3h5v5H3zM12 3h5v5h-5zM3 12h5v5H3zM12 12h5v5h-5z"/></svg>Auto-organizar</button>
+          <button id="print" type="button" class="primary"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7V2h10v5M5 14H2V7h16v7h-3M5 11h10v7H5zM14 9h1"/></svg>Imprimir lote</button>
+        </div>
+      </div>
       <main>
-        <section id="board-panel" aria-label="Prancheta">
-          <div id="sheet-tabs" role="tablist" aria-label="Folhas"></div>
-          <div id="board" tabindex="-1"></div>
-        </section>
-        <aside>
+        <aside aria-label="Dados e remessas">
+          <div class="pane-title">Dados da remessa</div>
+          <div class="project-picker">
+            <label for="project-select">Projeto</label>
+            <select id="project-select" aria-label="Projeto"></select>
+          </div>
           <form id="add-group" autocomplete="off">
             <h2>Nova remessa</h2>
+            <div class="lookup">
+              <label for="access-key">Chave de acesso (NF-e)</label>
+              <input id="access-key" name="accessKey" inputmode="numeric" placeholder="Leia o código ou digite os 44 dígitos" />
+              <button type="button" id="lookup-nfe">Consultar</button>
+            </div>
             <div class="combo-field">
               <label for="municipio-input">Município</label>
               <div class="combo">
@@ -55,22 +51,38 @@
                 <ul id="municipio-list" class="combo-list" role="listbox" hidden></ul>
               </div>
             </div>
-            <label>Volumes <input name="totalVolumes" type="number" min="1" max="100000" step="1" required /></label>
-            <label>Número da NF-e <input name="nfeNumber" placeholder="opcional" /></label>
+            <div class="form-row">
+              <label>Número da NF-e <input name="nfeNumber" placeholder="Opcional" /></label>
+              <label>Volumes <input name="totalVolumes" type="number" min="1" max="100000" step="1" placeholder="0" required /></label>
+            </div>
             <button type="submit" class="primary">Adicionar à fila</button>
           </form>
-          <section aria-label="Grupos na fila">
-            <h2>Fila</h2>
+          <div id="connection-settings"></div>
+          <section class="list-panel" aria-label="Grupos na fila">
+            <h2>Fila de remessas <span id="queue-count" class="count">0</span></h2>
             <ul id="groups"></ul>
           </section>
-          <section aria-label="Lotes impressos">
+          <section class="list-panel" aria-label="Lotes impressos">
             <h2>Impressos</h2>
             <ul id="batches"></ul>
           </section>
         </aside>
+        <section id="board-panel" aria-label="Prancheta">
+          <div class="workspace-heading">
+            <h2>Prancheta de impressão</h2>
+            <span>A4 <span aria-hidden="true">·</span> 10 etiquetas por folha</span>
+          </div>
+          <div id="sheet-tabs" role="tablist" aria-label="Folhas"></div>
+          <div id="board" tabindex="-1"></div>
+          <div class="overview-panel">
+            <div class="overview-label">Folhas <span id="board-summary"></span></div>
+            <div id="overview" aria-label="Visão geral"></div>
+          </div>
+        </section>
       </main>
       <footer>
-        <div id="overview" aria-label="Visão geral"></div>
+        <div id="status" role="status" aria-live="polite"></div>
+        <span class="status-hint">Arraste as etiquetas para organizar as folhas</span>
       </footer>
     </div>
     <script type="module" src="/main.ts"></script>
